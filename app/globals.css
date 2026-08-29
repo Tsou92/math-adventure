@@ -1,0 +1,197 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-heading: var(--font-title);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --background: oklch(0.975 0.015 265);
+  --foreground: oklch(0.34 0.045 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.34 0.045 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.34 0.045 260);
+  --primary: oklch(0.57 0.18 285);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.95 0.04 280);
+  --secondary-foreground: oklch(0.48 0.14 282);
+  --muted: oklch(0.96 0.012 265);
+  --muted-foreground: oklch(0.58 0.035 260);
+  --accent: oklch(0.94 0.05 170);
+  --accent-foreground: oklch(0.43 0.1 170);
+  --destructive: oklch(0.64 0.2 27);
+  --border: oklch(0.9 0.025 270);
+  --input: oklch(0.9 0.025 270);
+  --ring: oklch(0.62 0.17 285);
+  --radius: 0.875rem;
+  --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --font-title: "Arial Rounded MT Bold", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.dark {
+  --background: oklch(0.2 0.035 275);
+  --foreground: oklch(0.96 0.015 270);
+  --card: oklch(0.25 0.04 275);
+  --card-foreground: oklch(0.96 0.015 270);
+  --popover: oklch(0.25 0.04 275);
+  --popover-foreground: oklch(0.96 0.015 270);
+  --primary: oklch(0.72 0.15 285);
+  --primary-foreground: oklch(0.2 0.035 275);
+  --secondary: oklch(0.3 0.05 275);
+  --secondary-foreground: oklch(0.94 0.02 270);
+  --muted: oklch(0.28 0.04 275);
+  --muted-foreground: oklch(0.72 0.03 270);
+  --accent: oklch(0.35 0.08 170);
+  --accent-foreground: oklch(0.9 0.05 170);
+  --destructive: oklch(0.7 0.18 25);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.7 0.14 285);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    @apply font-sans;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    min-width: 320px;
+    background:
+      radial-gradient(circle at 12px 12px, rgba(124, 108, 226, 0.08) 1.5px, transparent 1.8px) 0 0 / 32px 32px,
+      linear-gradient(180deg, #f7f5ff 0%, #f7fbff 45%, #fffaf4 100%);
+  }
+
+  button,
+  input {
+    font: inherit;
+  }
+}
+
+.font-title {
+  font-family: var(--font-title);
+}
+
+.hero-panel {
+  background:
+    radial-gradient(circle at 82% 12%, rgba(255, 227, 142, 0.48), transparent 31%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.97), rgba(237, 233, 255, 0.96));
+}
+
+.sky-glow {
+  position: fixed;
+  border-radius: 999px;
+  pointer-events: none;
+  filter: blur(3px);
+  opacity: 0.72;
+}
+
+.sky-glow-left {
+  width: 320px;
+  height: 320px;
+  left: -190px;
+  top: 180px;
+  background: rgba(91, 211, 177, 0.2);
+}
+
+.sky-glow-right {
+  width: 390px;
+  height: 390px;
+  right: -240px;
+  top: 430px;
+  background: rgba(255, 187, 113, 0.2);
+}
+
+.progress-orbit {
+  --progress: 0deg;
+  display: grid;
+  width: 80px;
+  height: 80px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 999px;
+  background: conic-gradient(#7565dd var(--progress), #e9e5fb 0deg);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.8);
+}
+
+.progress-orbit > div {
+  display: grid;
+  width: 62px;
+  height: 62px;
+  place-content: center;
+  border-radius: 999px;
+  background: white;
+  text-align: center;
+}
+
+.progress-orbit strong {
+  font-family: var(--font-title);
+  font-size: 1.25rem;
+  line-height: 1;
+  color: #6755d9;
+}
+
+.progress-orbit span {
+  margin-top: 2px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: #9aa2b2;
+}
+
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+}
+
+input[type='number'] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+  }
+}
