@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://jisuan.tsounas.cn'),
   title: '口算星球｜儿童数学练习',
   description: '专为小朋友设计的 30 道随机口算闯关练习，支持自动批改、评分和错题提示。',
   openGraph: {
