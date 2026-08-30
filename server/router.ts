@@ -22,6 +22,16 @@ type LoginAttemptRow = { attempt_count: number; blocked_until: string | null };
 type LoginUserRow = Row & { id: string; password_hash: string; is_active: boolean };
 type AnswerRow = Row & { id: string; expression: string; correct_answer: number; level: string; answer_text: string | null };
 
+export async function fetchChildrenSummary(familyId: string) {
+  return db()`SELECT u.id, u.username, u.display_name, u.is_active, u.must_change_password, u.created_at,
+      count(r.id) FILTER (WHERE r.status = 'completed')::int AS round_count,
+      coalesce(round(avg(r.score) FILTER (WHERE r.status = 'completed')), 0)::int AS average_score,
+      max(r.completed_at) AS last_practiced_at
+    FROM kousuan.users u LEFT JOIN kousuan.practice_rounds r ON r.user_id = u.id
+    WHERE u.family_id = ${familyId} AND u.role = 'child'
+    GROUP BY u.id ORDER BY u.created_at`;
+}
+
 const countSchema = z.object({
   starter: z.number().int().min(0).max(50),
   explorer: z.number().int().min(0).max(50),
@@ -90,13 +100,7 @@ async function children(req: VercelRequest, res: VercelResponse) {
   if (!parent.family_id) throw Object.assign(new Error('家庭信息不存在'), { statusCode: 400 });
   const sql = db();
   if (req.method === 'GET') {
-    const rows = await sql`SELECT u.id, u.username, u.display_name, u.is_active, u.must_change_password, u.created_at,
-        count(r.id) FILTER (WHERE r.status = 'completed')::int AS round_count,
-        coalesce(round(avg(r.score)) FILTER (WHERE r.status = 'completed'), 0)::int AS average_score,
-        max(r.completed_at) AS last_practiced_at
-      FROM kousuan.users u LEFT JOIN kousuan.practice_rounds r ON r.user_id = u.id
-      WHERE u.family_id = ${parent.family_id} AND u.role = 'child'
-      GROUP BY u.id ORDER BY u.created_at`;
+    const rows = await fetchChildrenSummary(parent.family_id);
     return send(res, 200, { children: rows });
   }
   method(req, 'POST');
