@@ -1,5 +1,8 @@
 {
   "buildCommand": "npm run build:vercel",
   "outputDirectory": "vercel-dist",
-  "framework": null
+  "framework": null,
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api?path=:path*" }
+  ]
 }

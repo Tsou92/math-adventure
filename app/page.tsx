@@ -1,565 +1,126 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  BookOpen,
-  Check,
-  ChevronRight,
-  CircleAlert,
-  Clock3,
-  History,
-  PartyPopper,
-  Play,
-  RefreshCw,
-  Rocket,
-  Sparkles,
-  Star,
-  Target,
-  Trophy,
+  BookOpen, Check, ChevronRight, CircleAlert, Clock3, History, KeyRound, LogOut,
+  PartyPopper, Play, RefreshCw, Rocket, Settings2, Sparkles, Star, Target,
+  Trophy, UserPlus, Users,
 } from 'lucide-react';
+import { scoreMessage, type Level } from '@/lib/questions';
+import type { PracticePreset, QuestionCounts } from '@/lib/presets';
 
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { makeQuestions, scoreMessage, type Level } from '@/lib/questions';
-import { cn } from '@/lib/utils';
+type User = { id: string; username: string; displayName: string; role: 'parent' | 'site_owner' | 'child'; mustChangePassword: boolean };
+type RoundQuestion = { id: string; position: number; level: Level; expression: string; answer: string; isCorrect?: boolean; correctAnswer?: number };
+type Round = { id: string; status: 'generated' | 'started' | 'completed'; source: string; packageName: string; counts: QuestionCounts; totalCount: number; startedAt: string | null; questions: RoundQuestion[] };
+type RecordItem = { id: string; package_name: string; starter_count: number; explorer_count: number; challenger_count: number; total_count: number; score: number; correct_count: number; duration_seconds: number; completed_at: string };
+type WrongItem = { id: string; expression: string; correct_answer: number; level: Level; mistake_count: number; last_answer: string; last_seen_at: string };
+type ChildItem = { id: string; username: string; display_name: string; is_active: boolean; must_change_password: boolean; round_count: number; average_score: number; last_practiced_at: string | null };
+type LegacyRecord = { id: string; completedAt: string; durationSeconds: number; score: number; correctCount: number };
 
-const LEVELS: Array<{
-  key: Level;
-  title: string;
-  subtitle: string;
-  badge: string;
-  accent: string;
-  soft: string;
-  border: string;
-}> = [
-  {
-    key: 'starter',
-    title: '热身小跑',
-    subtitle: '10 以内加减法',
-    badge: '第 1 关',
-    accent: 'text-[#F15B45]',
-    soft: 'bg-[#FFF1EC]',
-    border: 'border-[#FFD9CD]',
-  },
-  {
-    key: 'explorer',
-    title: '森林探险',
-    subtitle: '20 以内加减法',
-    badge: '第 2 关',
-    accent: 'text-[#0F8F72]',
-    soft: 'bg-[#EAF8F2]',
-    border: 'border-[#C9EBDD]',
-  },
-  {
-    key: 'challenger',
-    title: '星球挑战',
-    subtitle: '100 以内进退位加减混合',
-    badge: '第 3 关',
-    accent: 'text-[#6755D9]',
-    soft: 'bg-[#F0EDFF]',
-    border: 'border-[#DAD3FF]',
-  },
-];
-
-type RoundStatus = 'idle' | 'running' | 'finished';
-
-type PracticeRecord = {
-  id: string;
-  completedAt: string;
-  durationSeconds: number;
-  score: number;
-  correctCount: number;
+const levelInfo: Record<Level, { title: string; subtitle: string; tone: string }> = {
+  starter: { title: '星芽热身', subtitle: '10 以内加减法', tone: 'coral' },
+  explorer: { title: '森林探险', subtitle: '20 以内加减法', tone: 'green' },
+  challenger: { title: '星球挑战', subtitle: '100 以内进退位混合', tone: 'purple' },
 };
 
-type WrongQuestion = {
-  expression: string;
-  answer: number;
-  lastAnswer: string;
-  level: Level;
-  mistakes: number;
-  lastSeenAt: string;
-};
-
-const RECORDS_KEY = 'kousuan-planet-records-v1';
-const WRONG_BOOK_KEY = 'kousuan-planet-wrong-book-v1';
-
-function readStorage<T>(key: string, fallback: T): T {
-  try {
-    const saved = window.localStorage.getItem(key);
-    return saved ? JSON.parse(saved) as T : fallback;
-  } catch {
-    return fallback;
-  }
+async function api<T>(path: string, options?: RequestInit): Promise<T> {
+  const headers = new Headers(options?.headers);
+  if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  const response = await fetch(`/api/${path}`, { ...options, headers });
+  const data = await response.json().catch(() => ({})) as T & { error?: string };
+  if (!response.ok) throw new Error(data.error ?? '网络开小差了，请再试一次');
+  return data as T;
 }
 
-function formatDuration(totalSeconds: number) {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+function formatDuration(seconds: number) {
+  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
-function formatRecordDate(value: string) {
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: 'numeric',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(value));
+function formatDate(value: string | null) {
+  if (!value) return '还没有练习';
+  return new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
+}
+
+function AppHeader({ user, onLogout }: { user: User; onLogout: () => void }) {
+  return <header className="relative z-10 border-b border-white/70 bg-white/75 backdrop-blur-xl"><div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-4 sm:px-8">
+    <div className="flex items-center gap-3"><span className="grid size-11 -rotate-6 place-items-center rounded-2xl bg-[#6755D9] text-white shadow-[0_7px_0_#4E3DC4]"><Rocket className="size-6" /></span><div><p className="font-title text-xl font-black">口算星球</p><p className="text-xs font-bold text-[#8B94A7]">每天一小步，数学一大步</p></div></div>
+    <div className="flex items-center gap-2"><span className="hidden rounded-full bg-[#FFF7D9] px-4 py-2 text-sm font-extrabold text-[#A86600] sm:inline-flex"><Star className="mr-1 size-4 fill-[#FFC740]" />{user.displayName}</span><button className="soft-button" onClick={onLogout} title="退出登录"><LogOut className="size-4" /><span className="hidden sm:inline">退出</span></button></div>
+  </div></header>;
+}
+
+function Login({ onLogin }: { onLogin: (user: User) => void }) {
+  const [username, setUsername] = useState(''); const [password, setPassword] = useState(''); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
+  const submit = async (event: { preventDefault: () => void }) => { event.preventDefault(); setBusy(true); setError(''); try { const data = await api<{ user: User }>('auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }); onLogin(data.user); } catch (issue) { setError(issue instanceof Error ? issue.message : '登录失败'); } finally { setBusy(false); } };
+  return <main className="relative grid min-h-screen place-items-center overflow-hidden px-5 py-12"><div className="sky-glow sky-glow-left" /><div className="sky-glow sky-glow-right" /><section className="hero-panel relative z-10 w-full max-w-md rounded-[34px] border border-white p-7 shadow-[0_28px_80px_rgba(80,67,160,.18)] sm:p-10">
+    <div className="mb-8 text-center"><span className="mx-auto mb-5 grid size-20 -rotate-6 place-items-center rounded-[26px] bg-[#6755D9] text-white shadow-[0_10px_0_#4E3DC4]"><Rocket className="size-10" /></span><h1 className="font-title text-3xl font-black">欢迎来到口算星球</h1><p className="mt-2 font-semibold text-[#808AA0]">输入家长创建的用户名和密码，开始今天的冒险</p></div>
+    <form className="space-y-4" onSubmit={submit}><label className="field-label">用户名<input autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="请输入用户名" required /></label><label className="field-label">密码<input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="请输入密码" required /></label>{error && <p className="notice-error"><CircleAlert className="size-4" />{error}</p>}<button className="primary-button w-full" disabled={busy}>{busy ? '正在登录…' : <>进入口算星球 <ChevronRight className="size-5" /></>}</button></form>
+    <p className="mt-6 text-center text-xs font-semibold text-[#9AA2B2]">孩子账号由家长创建，不需要手机或邮箱</p>
+  </section></main>;
+}
+
+function ChangePassword({ user, onDone }: { user: User; onDone: () => void }) {
+  const [currentPassword, setCurrentPassword] = useState(''); const [newPassword, setNewPassword] = useState(''); const [repeat, setRepeat] = useState(''); const [message, setMessage] = useState('');
+  const submit = async (event: { preventDefault: () => void }) => { event.preventDefault(); setMessage(''); if (newPassword !== repeat) return setMessage('两次输入的新密码不一致'); try { await api('auth/change-password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) }); onDone(); } catch (issue) { setMessage(issue instanceof Error ? issue.message : '修改失败'); } };
+  return <main className="grid min-h-screen place-items-center px-5"><section className="panel w-full max-w-md p-7"><KeyRound className="mb-4 size-10 text-[#6755D9]" /><h1 className="font-title text-2xl font-black">先设置一个新密码</h1><p className="mt-2 text-sm font-semibold text-[#808AA0]">这是临时密码首次登录，为了账号安全，请设置你自己的密码。</p><form className="mt-6 space-y-4" onSubmit={submit}><label className="field-label">当前密码<input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required /></label><label className="field-label">新密码（{user.role === 'child' ? '至少 6 位' : '至少 10 位'}）<input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required /></label><label className="field-label">再输入一次新密码<input type="password" value={repeat} onChange={(e) => setRepeat(e.target.value)} required /></label>{message && <p className="notice-error">{message}</p>}<button className="primary-button w-full">保存新密码</button></form></section></main>;
+}
+
+function ParentDashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
+  const [children, setChildren] = useState<ChildItem[]>([]); const [form, setForm] = useState({ displayName: '', username: '', password: '' }); const [message, setMessage] = useState(''); const [legacy, setLegacy] = useState<LegacyRecord[]>([]);
+  const load = useCallback(async () => { const data = await api<{ children: ChildItem[] }>('parent/children'); setChildren(data.children); }, []);
+  useEffect(() => { const timer = window.setTimeout(() => { void load(); try { setLegacy(JSON.parse(localStorage.getItem('kousuan-planet-records-v1') ?? '[]')); } catch { setLegacy([]); } }, 0); return () => clearTimeout(timer); }, [load]);
+  const createChild = async (event: { preventDefault: () => void }) => { event.preventDefault(); setMessage(''); try { await api('parent/children', { method: 'POST', body: JSON.stringify(form) }); setForm({ displayName: '', username: '', password: '' }); setMessage('孩子账号创建成功！'); await load(); } catch (issue) { setMessage(issue instanceof Error ? issue.message : '创建失败'); } };
+  const resetPassword = async (child: ChildItem) => { const password = window.prompt(`请为 ${child.display_name} 设置新密码（至少 6 位）`); if (!password) return; try { await api(`parent/children/${child.id}/reset-password`, { method: 'POST', body: JSON.stringify({ password }) }); setMessage(`${child.display_name} 的密码已重置，下次登录需修改密码。`); await load(); } catch (issue) { setMessage(issue instanceof Error ? issue.message : '重置失败'); } };
+  const toggleStatus = async (child: ChildItem) => { try { await api(`parent/children/${child.id}/status`, { method: 'POST', body: JSON.stringify({ isActive: !child.is_active }) }); await load(); } catch (issue) { setMessage(issue instanceof Error ? issue.message : '操作失败'); } };
+  return <main className="min-h-screen pb-20"><AppHeader user={user} onLogout={onLogout} /><div className="mx-auto max-w-6xl space-y-7 px-5 py-8 sm:px-8">
+    <section className="hero-panel rounded-[32px] border border-white p-7 shadow-[0_20px_60px_rgba(93,78,176,.12)] sm:p-9"><div className="flex flex-wrap items-center justify-between gap-5"><div><span className="eyebrow"><Users className="size-4" />家长管理中心</span><h1 className="mt-4 font-title text-3xl font-black sm:text-4xl">陪孩子一起收集进步 ✨</h1><p className="mt-2 font-semibold text-[#7D879C]">创建孩子账号、查看练习概况，并在需要时重置密码。</p></div><div className="stat-bubble"><strong>{children.length}</strong><span>个孩子账号</span></div></div></section>
+    <div className="grid gap-7 lg:grid-cols-[1fr_360px]"><section className="panel p-6"><div className="section-title"><Users />孩子账号</div>{message && <p className="mb-4 rounded-2xl bg-[#F0EDFF] p-3 text-sm font-bold text-[#6755D9]">{message}</p>}<div className="space-y-3">{children.length ? children.map((child) => <article className="child-card" key={child.id}><div className="avatar">{child.display_name.slice(0, 1)}</div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><strong className="font-title">{child.display_name}</strong><span className={child.is_active ? 'status-on' : 'status-off'}>{child.is_active ? '使用中' : '已停用'}</span></div><p className="truncate text-xs font-semibold text-[#8A94A8]">用户名：{child.username} · 已完成 {child.round_count} 轮 · 平均 {child.average_score} 分</p><p className="mt-1 text-xs text-[#A0A8B7]">最近：{formatDate(child.last_practiced_at)}</p></div><div className="flex flex-wrap gap-2"><button className="tiny-button" onClick={() => resetPassword(child)}><KeyRound />重置密码</button><button className="tiny-button" onClick={() => toggleStatus(child)}>{child.is_active ? '停用' : '启用'}</button></div></article>) : <div className="empty-state"><UserPlus className="size-8 text-[#7565DD]" /><div><strong>还没有孩子账号</strong><span>在右侧创建第一个账号吧</span></div></div>}</div></section>
+      <section className="panel p-6"><div className="section-title"><UserPlus />创建孩子账号</div><form className="space-y-4" onSubmit={createChild}><label className="field-label">孩子昵称<input value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} placeholder="例如：小宇" required /></label><label className="field-label">登录用户名<input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder="3–24 位，不可重复" required /></label><label className="field-label">初始密码<input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="至少 6 位" required /></label><button className="primary-button w-full"><UserPlus />创建账号</button></form></section></div>
+    <section className="panel p-6"><div className="section-title"><History />本机旧记录</div><p className="mb-4 text-sm font-semibold text-[#8A94A8]">这里只展示升级前保存在当前浏览器里的记录，不会自动归入任何孩子账号。</p>{legacy.length ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{legacy.slice(0, 12).map((item) => <div className="record-card" key={item.id}><strong>{item.score} 分</strong><p>{item.correctCount}/30 题 · {formatDuration(item.durationSeconds)}</p><span>{formatDate(item.completedAt)}</span></div>)}</div> : <p className="text-sm font-bold text-[#A0A8B7]">当前浏览器没有旧记录</p>}</section>
+  </div></main>;
+}
+
+function PresetPicker({ presets, onCreate, busy }: { presets: PracticePreset[]; onCreate: (input: { source: 'preset'; presetKey: string; presetVersion: number } | { source: 'custom'; counts: QuestionCounts }) => void; busy: boolean }) {
+  const [custom, setCustom] = useState<QuestionCounts>({ starter: 10, explorer: 10, challenger: 10 }); const total = custom.starter + custom.explorer + custom.challenger;
+  const setCount = (level: Level, value: string) => setCustom({ ...custom, [level]: Math.min(50, Math.max(0, Number(value) || 0)) });
+  return <div className="space-y-8"><section><div className="mb-4 flex items-end justify-between"><div><span className="eyebrow"><Sparkles className="size-4" />推荐套餐</span><h2 className="mt-3 font-title text-2xl font-black">选一个冒险难度</h2></div><span className="text-xs font-bold text-[#929BAD]">点击即可出题</span></div><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">{presets.map((preset) => <button className={`preset-card preset-${preset.color}`} disabled={busy} key={`${preset.key}-${preset.version}`} onClick={() => onCreate({ source: 'preset', presetKey: preset.key, presetVersion: preset.version })}>{preset.recommended && <span className="recommended">最推荐</span>}<span className="text-4xl">{preset.emoji}</span><strong>{preset.name}</strong><small>{preset.description}</small><div className="preset-counts"><span>10内 {preset.counts.starter}</span><span>20内 {preset.counts.explorer}</span><span>混合 {preset.counts.challenger}</span></div><b>{preset.counts.starter + preset.counts.explorer + preset.counts.challenger} 道题 <ChevronRight /></b></button>)}</div></section>
+    <section className="panel p-6 sm:p-7"><div className="flex flex-wrap items-center justify-between gap-3"><div><span className="eyebrow"><Settings2 className="size-4" />自由搭配</span><h2 className="mt-3 font-title text-2xl font-black">我的专属套餐</h2></div><div className="stat-bubble compact"><strong>{total}</strong><span>道题</span></div></div><div className="mt-6 grid gap-4 sm:grid-cols-3">{(Object.keys(levelInfo) as Level[]).map((level) => <label className={`count-card tone-${levelInfo[level].tone}`} key={level}><span>{levelInfo[level].title}</span><small>{levelInfo[level].subtitle}</small><div><button type="button" onClick={() => setCount(level, String(custom[level] - 1))}>−</button><input type="number" min="0" max="50" value={custom[level]} onChange={(e) => setCount(level, e.target.value)} /><button type="button" onClick={() => setCount(level, String(custom[level] + 1))}>＋</button></div></label>)}</div><button className="primary-button mt-6 w-full sm:w-auto" disabled={busy || total < 1 || total > 100} onClick={() => onCreate({ source: 'custom', counts: custom })}><Rocket />按这个搭配出题（{total} 道）</button></section>
+  </div>;
+}
+
+function PracticeRound({ round, onChanged, onFinished, onAbandon }: { round: Round; onChanged: (round: Round) => void; onFinished: (result: RecordItem, round: Round) => void; onAbandon: () => void }) {
+  const [answers, setAnswers] = useState<Record<string, string>>(() => Object.fromEntries(round.questions.map((q) => [q.id, q.answer ?? '']))); const [elapsed, setElapsed] = useState(0); const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const saveTimer = useRef<number | null>(null);
+  useEffect(() => { if (round.status !== 'started' || !round.startedAt) return; const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - new Date(round.startedAt!).getTime()) / 1000))); tick(); const timer = window.setInterval(tick, 500); return () => clearInterval(timer); }, [round.status, round.startedAt]);
+  const save = useCallback(async (next: Record<string, string>) => { const list = Object.entries(next).map(([questionId, answer]) => ({ questionId, answer })); if (list.length) await api(`rounds/${round.id}/answers`, { method: 'PATCH', body: JSON.stringify({ answers: list }) }); }, [round.id]);
+  const updateAnswer = (id: string, value: string) => { if (!/^-?\d{0,4}$/.test(value)) return; const next = { ...answers, [id]: value }; setAnswers(next); if (saveTimer.current) clearTimeout(saveTimer.current); saveTimer.current = window.setTimeout(() => void save(next).catch(() => setError('答案暂时没有保存，请检查网络')), 700); };
+  const start = async () => { setBusy(true); setError(''); try { const data = await api<{ round: Round }>(`rounds/${round.id}/start`, { method: 'POST' }); onChanged(data.round); } catch (issue) { setError(issue instanceof Error ? issue.message : '开始失败'); } finally { setBusy(false); } };
+  const submit = async () => { setBusy(true); setError(''); try { await save(answers); const data = await api<{ result: RecordItem; round: Round }>(`rounds/${round.id}/submit`, { method: 'POST' }); onFinished(data.result, data.round); } catch (issue) { setError(issue instanceof Error ? issue.message : '交卷失败'); } finally { setBusy(false); } };
+  const answered = Object.values(answers).filter((value) => value.trim() !== '').length;
+  if (round.status === 'generated') return <section className="hero-panel rounded-[32px] border border-white p-7 text-center shadow-[0_24px_70px_rgba(93,78,176,.14)] sm:p-12"><span className="mx-auto grid size-24 place-items-center rounded-full bg-[#F0EDFF] text-5xl">🚀</span><h1 className="mt-6 font-title text-3xl font-black">{round.packageName} 已准备好！</h1><p className="mx-auto mt-3 max-w-lg font-semibold text-[#7E889D]">本轮共 {round.totalCount} 道题。点击开始后题目才会出现，同时开始计时。</p><div className="mx-auto mt-5 flex max-w-md flex-wrap justify-center gap-2">{(Object.keys(levelInfo) as Level[]).map((level) => round.counts[level] > 0 && <span className="count-pill" key={level}>{levelInfo[level].title} {round.counts[level]} 道</span>)}</div>{error && <p className="notice-error mx-auto mt-4 max-w-md">{error}</p>}<div className="mt-8 flex flex-wrap justify-center gap-3"><button className="soft-button" onClick={onAbandon}>换一个套餐</button><button className="primary-button" disabled={busy} onClick={start}><Play />开始答题并计时</button></div></section>;
+  return <div className="space-y-6"><section className="sticky top-3 z-20 flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-white bg-white/90 p-4 shadow-lg backdrop-blur"><div><span className="text-xs font-bold text-[#939CAF]">正在挑战</span><h1 className="font-title text-xl font-black">{round.packageName}</h1></div><div className="flex items-center gap-3"><span className="timer"><Clock3 />{formatDuration(elapsed)}</span><span className="progress-text">{answered}/{round.totalCount}</span></div></section>{error && <p className="notice-error">{error}</p>}<div className="space-y-7">{(Object.keys(levelInfo) as Level[]).map((level) => { const questions = round.questions.filter((q) => q.level === level); if (!questions.length) return null; return <section className="panel p-5 sm:p-7" key={level}><div className={`level-heading tone-${levelInfo[level].tone}`}><Target /><div><strong>{levelInfo[level].title}</strong><span>{levelInfo[level].subtitle} · {questions.length} 道</span></div></div><div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{questions.map((question) => <label className="question-card" key={question.id}><span className="question-number">{question.position}</span><strong>{question.expression} =</strong><input inputMode="numeric" aria-label={`第 ${question.position} 题答案`} value={answers[question.id] ?? ''} onChange={(e) => updateAnswer(question.id, e.target.value)} /></label>)}</div></section>; })}</div><div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl bg-[#26334A] p-5 text-white"><div><strong className="font-title text-lg">答完就交卷吧！</strong><p className="text-xs text-white/65">已完成 {answered}/{round.totalCount} 道</p></div><button className="primary-button bg-[#FFC740] text-[#6A4800] shadow-[0_6px_0_#D99E00]" disabled={busy || answered !== round.totalCount} onClick={submit}><Check />{busy ? '正在批改…' : '提交并查看成绩'}</button></div></div>;
+}
+
+function ResultPanel({ result, round, onNext }: { result: RecordItem; round: Round; onNext: () => void }) {
+  const message = scoreMessage(Number(result.score), Number(result.total_count));
+  return <div className="space-y-6"><section className="hero-panel rounded-[32px] border border-white p-8 text-center shadow-xl"><PartyPopper className="mx-auto size-12 text-[#F09B35]" /><h1 className="mt-3 font-title text-3xl font-black">{message.title}</h1><p className="mt-2 font-semibold text-[#7E889D]">{message.note}</p><div className="mx-auto mt-6 grid max-w-xl grid-cols-3 gap-3"><div className="result-stat"><strong>{result.score}</strong><span>得分</span></div><div className="result-stat"><strong>{result.correct_count}/{result.total_count}</strong><span>答对</span></div><div className="result-stat"><strong>{formatDuration(result.duration_seconds)}</strong><span>用时</span></div></div><button className="primary-button mt-7" onClick={onNext}><RefreshCw />选择下一轮套餐</button></section><section className="panel p-6"><div className="section-title"><BookOpen />本轮答题详情</div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{round.questions.map((q) => <div className={`answer-card ${q.isCorrect ? 'correct' : 'wrong'}`} key={q.id}><span>{q.position}</span><strong>{q.expression} = {q.answer}</strong>{q.isCorrect ? <Check /> : <small>正确答案 {q.correctAnswer}</small>}</div>)}</div></section></div>;
+}
+
+function ChildDashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
+  const [presets, setPresets] = useState<PracticePreset[]>([]); const [round, setRound] = useState<Round | null>(null); const [records, setRecords] = useState<RecordItem[]>([]); const [wrong, setWrong] = useState<WrongItem[]>([]); const [result, setResult] = useState<RecordItem | null>(null); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
+  const loadData = useCallback(async () => { const [p, a, r, w] = await Promise.all([api<{ presets: PracticePreset[] }>('presets'), api<{ round: Round | null }>('rounds/active'), api<{ records: RecordItem[] }>('records'), api<{ wrongQuestions: WrongItem[] }>('wrong-book')]); setPresets(p.presets); setRound(a.round); setRecords(r.records); setWrong(w.wrongQuestions); }, []);
+  useEffect(() => { const timer = window.setTimeout(() => void loadData().catch((issue) => setError(issue instanceof Error ? issue.message : '加载失败')), 0); return () => clearTimeout(timer); }, [loadData]);
+  const create = async (input: { source: 'preset'; presetKey: string; presetVersion: number } | { source: 'custom'; counts: QuestionCounts }) => { setBusy(true); setError(''); try { const data = await api<{ round: Round }>('rounds', { method: 'POST', body: JSON.stringify({ ...input, idempotencyKey: crypto.randomUUID() }) }); setRound(data.round); window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (issue) { setError(issue instanceof Error ? issue.message : '出题失败'); } finally { setBusy(false); } };
+  const abandon = async () => { if (!round) return; try { await api(`rounds/${round.id}/abandon`, { method: 'POST' }); setRound(null); } catch (issue) { setError(issue instanceof Error ? issue.message : '操作失败'); } };
+  const finished = async (nextResult: RecordItem, nextRound: Round) => { setResult(nextResult); setRound(nextRound); const [r, w] = await Promise.all([api<{ records: RecordItem[] }>('records'), api<{ wrongQuestions: WrongItem[] }>('wrong-book')]); setRecords(r.records); setWrong(w.wrongQuestions); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  return <main className="min-h-screen pb-24"><AppHeader user={user} onLogout={onLogout} /><div className="mx-auto max-w-6xl px-5 py-8 sm:px-8">{error && <p className="notice-error mb-5">{error}</p>}{result && round ? <ResultPanel result={result} round={round} onNext={() => { setResult(null); setRound(null); }} /> : round ? <PracticeRound round={round} onChanged={setRound} onFinished={finished} onAbandon={abandon} /> : <><section className="hero-panel mb-8 rounded-[32px] border border-white p-7 shadow-[0_24px_70px_rgba(93,78,176,.13)] sm:p-10"><span className="eyebrow"><Sparkles className="size-4" />今天也要闪闪发光</span><h1 className="mt-4 font-title text-3xl font-black sm:text-5xl">{user.displayName}，选择你的<br className="hidden sm:block" />口算冒险吧！</h1><p className="mt-3 max-w-xl font-semibold text-[#7D879C]">先选套餐并出题，准备好后再点击“开始答题”，计时才会启动。</p></section><PresetPicker presets={presets} onCreate={create} busy={busy} /><div className="mt-8 grid gap-7 lg:grid-cols-2"><section className="panel p-6"><div className="section-title"><History />答题记录 <span>{records.length} 轮</span></div>{records.length ? <div className="space-y-3">{records.slice(0, 8).map((item) => <article className="record-row" key={item.id}><div className="score-dot">{item.score}</div><div className="flex-1"><strong>{item.package_name}</strong><p>{item.correct_count}/{item.total_count} 题 · 用时 {formatDuration(item.duration_seconds)}</p></div><time>{formatDate(item.completed_at)}</time></article>)}</div> : <div className="empty-state"><Trophy className="size-8 text-[#F2A334]" /><div><strong>第一枚奖章等你来拿</strong><span>完成一轮练习后会记录在这里</span></div></div>}</section><section className="panel p-6"><div className="section-title"><BookOpen />错题本 <span>{wrong.length} 题</span></div>{wrong.length ? <div className="grid gap-3 sm:grid-cols-2">{wrong.slice(0, 10).map((item) => <article className="wrong-card" key={item.id}><div className="flex items-center justify-between"><strong>{item.expression} = {item.correct_answer}</strong><span>错 {item.mistake_count} 次</span></div><p>上次回答：{item.last_answer || '未填写'}</p><time>{formatDate(item.last_seen_at)}</time></article>)}</div> : <div className="empty-state"><Star className="size-8 text-[#F2A334]" /><div><strong>错题本还是空的</strong><span>认真答题，争取一直保持哦</span></div></div>}</section></div></>}</div></main>;
 }
 
 export default function Home() {
-  const [roundSeed, setRoundSeed] = useState(438721);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [score, setScore] = useState<number | null>(null);
-  const [roundStatus, setRoundStatus] = useState<RoundStatus>('idle');
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [records, setRecords] = useState<PracticeRecord[]>([]);
-  const [wrongBook, setWrongBook] = useState<WrongQuestion[]>([]);
-  const [storageReady, setStorageReady] = useState(false);
-  const inputRefs = useRef<Array<HTMLInputElement | null>>([]);
-  const startedAtRef = useRef<number | null>(null);
-  const questions = useMemo(() => makeQuestions(roundSeed), [roundSeed]);
-
-  useEffect(() => {
-    const loadStorage = window.setTimeout(() => {
-      setRecords(readStorage<PracticeRecord[]>(RECORDS_KEY, []));
-      setWrongBook(readStorage<WrongQuestion[]>(WRONG_BOOK_KEY, []));
-      setStorageReady(true);
-    }, 0);
-    return () => window.clearTimeout(loadStorage);
-  }, []);
-
-  useEffect(() => {
-    if (roundStatus !== 'running') return;
-
-    const updateElapsed = () => {
-      if (startedAtRef.current === null) return;
-      setElapsedSeconds(Math.floor((Date.now() - startedAtRef.current) / 1000));
-    };
-
-    updateElapsed();
-    const interval = window.setInterval(updateElapsed, 250);
-    return () => window.clearInterval(interval);
-  }, [roundStatus]);
-
-  const answeredCount = questions.filter(
-    (question) => (answers[question.id] ?? '').trim() !== '',
-  ).length;
-  const allAnswered = answeredCount === questions.length;
-  const correctAnswersCount = score === null
-    ? 0
-    : questions.filter((question) => Number(answers[question.id]) === question.answer).length;
-
-  const startRound = () => {
-    startedAtRef.current = Date.now();
-    setElapsedSeconds(0);
-    setRoundStatus('running');
-    window.setTimeout(() => inputRefs.current[0]?.focus(), 80);
-  };
-
-  const submitAnswers = () => {
-    if (!allAnswered || roundStatus !== 'running') return;
-    const correct = questions.filter(
-      (question) => Number(answers[question.id]) === question.answer,
-    ).length;
-    const finalScore = Math.round((correct / questions.length) * 100);
-    const finalDuration = startedAtRef.current === null
-      ? elapsedSeconds
-      : Math.floor((Date.now() - startedAtRef.current) / 1000);
-    const completedAt = new Date().toISOString();
-    const record: PracticeRecord = {
-      id: `${Date.now()}-${roundSeed}`,
-      completedAt,
-      durationSeconds: finalDuration,
-      score: finalScore,
-      correctCount: correct,
-    };
-    const nextRecords = [record, ...records];
-    const wrongAnswers = questions.filter(
-      (question) => Number(answers[question.id]) !== question.answer,
-    );
-    const nextWrongBook = [...wrongBook];
-
-    wrongAnswers.forEach((question) => {
-      const existingIndex = nextWrongBook.findIndex(
-        (item) => item.expression === question.expression && item.answer === question.answer,
-      );
-      const nextItem: WrongQuestion = {
-        expression: question.expression,
-        answer: question.answer,
-        lastAnswer: answers[question.id] ?? '',
-        level: question.level,
-        mistakes: existingIndex >= 0 ? nextWrongBook[existingIndex].mistakes + 1 : 1,
-        lastSeenAt: completedAt,
-      };
-
-      if (existingIndex >= 0) nextWrongBook.splice(existingIndex, 1);
-      nextWrongBook.unshift(nextItem);
-    });
-
-    setElapsedSeconds(finalDuration);
-    setRoundStatus('finished');
-    setScore(finalScore);
-    setRecords(nextRecords);
-    setWrongBook(nextWrongBook);
-    window.localStorage.setItem(RECORDS_KEY, JSON.stringify(nextRecords));
-    window.localStorage.setItem(WRONG_BOOK_KEY, JSON.stringify(nextWrongBook));
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const startNextRound = () => {
-    setRoundSeed(Math.floor(Math.random() * 2_000_000_000));
-    setAnswers({});
-    setScore(null);
-    setRoundStatus('idle');
-    setElapsedSeconds(0);
-    startedAtRef.current = null;
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const result = score === null ? null : scoreMessage(score);
-
-  return (
-    <main className="min-h-screen overflow-hidden pb-36 text-[#26334A]">
-      <div className="sky-glow sky-glow-left" aria-hidden="true" />
-      <div className="sky-glow sky-glow-right" aria-hidden="true" />
-
-      <header className="relative z-10 border-b border-white/70 bg-white/70 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-4 sm:px-8">
-          <div className="flex items-center gap-3">
-            <span className="grid size-11 rotate-[-5deg] place-items-center rounded-[16px] bg-[#6755D9] text-white shadow-[0_7px_0_#4E3DC4]">
-              <Rocket className="size-6" strokeWidth={2.6} />
-            </span>
-            <div>
-              <p className="font-title text-xl font-black tracking-tight text-[#26334A] sm:text-2xl">
-                口算星球
-              </p>
-              <p className="hidden text-xs font-semibold text-[#7B879E] sm:block">每天一小步，数学一大步</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 rounded-full border border-[#FFDF8D] bg-[#FFF7D9] px-4 py-2 text-sm font-extrabold text-[#A86600] shadow-sm">
-            <Star className="size-4 fill-[#FFC740] text-[#E9A900]" />
-            30 颗挑战星
-          </div>
-        </div>
-      </header>
-
-      <div className="relative z-[1] mx-auto max-w-6xl px-5 pt-8 sm:px-8 sm:pt-12">
-        <section className="hero-panel relative overflow-hidden rounded-[32px] border border-white/80 px-6 py-7 shadow-[0_24px_70px_rgba(93,78,176,0.13)] sm:px-10 sm:py-9">
-          <div className="absolute -right-4 -top-8 hidden text-[#8071E9]/10 md:block" aria-hidden="true">
-            <Sparkles className="size-52" strokeWidth={1.4} />
-          </div>
-
-          {score === null ? (
-            <div className="relative grid items-center gap-7 lg:grid-cols-[1fr_300px]">
-              <div>
-                <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-white/75 px-3 py-1.5 text-xs font-extrabold text-[#6755D9] shadow-sm">
-                  <Sparkles className="size-3.5" /> 今日口算大冒险
-                </div>
-                <h1 className="font-title max-w-2xl text-3xl font-black leading-tight tracking-tight text-[#26334A] sm:text-5xl">
-                  准备好了吗？<br />
-                  <span className="text-[#6755D9]">闯过 3 关</span>，收集智慧星！
-                </h1>
-                <p className="mt-4 max-w-xl text-sm font-semibold leading-7 text-[#6F7B91] sm:text-base">
-                  一共 30 道题。点击开始后计时，全部完成就能自动批改，成绩和错题也会帮你保存好。
-                </p>
-                {roundStatus === 'idle' && (
-                  <Button
-                    onClick={startRound}
-                    disabled={!storageReady}
-                    size="lg"
-                    className="mt-6 h-13 rounded-2xl bg-[#F15B45] px-7 text-base font-extrabold shadow-[0_6px_0_#C83F2D] hover:bg-[#FA6C55] active:translate-y-1 active:shadow-[0_2px_0_#C83F2D]"
-                  >
-                    <Play className="size-5 fill-current" /> 开始答题
-                  </Button>
-                )}
-              </div>
-
-              <div className="space-y-3">
-                <img
-                  src="/og.png"
-                  alt="小火箭、星星和数字组成的口算星球插画"
-                  className="hidden aspect-[1200/630] w-full rounded-[22px] border-4 border-white object-cover shadow-[0_10px_30px_rgba(79,62,160,0.14)] lg:block"
-                />
-                <div className="flex items-center gap-4 rounded-[24px] border border-white bg-white/75 p-4 shadow-[0_12px_35px_rgba(79,62,160,0.1)] sm:min-w-[260px]">
-                  <div className="progress-orbit" style={{ '--progress': `${answeredCount * 12}deg` } as React.CSSProperties}>
-                    <div>
-                      <strong>{answeredCount}</strong>
-                      <span>/ 30</span>
-                    </div>
-                  </div>
-                  <div>
-                    <p className="font-title text-lg font-black">答题进度</p>
-                    <p className="mt-1 text-xs font-semibold text-[#8993A6]">
-                      {allAnswered ? '全部完成，可以交卷啦！' : `还有 ${30 - answeredCount} 道题`}
-                    </p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <a href="#practice-records" className="mini-stat-card">
-                    <History className="size-4 text-[#6755D9]" />
-                    <strong>{records.length}</strong>
-                    <span>答题记录</span>
-                  </a>
-                  <a href="#wrong-book" className="mini-stat-card">
-                    <BookOpen className="size-4 text-[#F15B45]" />
-                    <strong>{wrongBook.length}</strong>
-                    <span>错题本</span>
-                  </a>
-                  <div className="mini-stat-card">
-                    <Clock3 className="size-4 text-[#0F8F72]" />
-                    <strong>{formatDuration(elapsedSeconds)}</strong>
-                    <span>{roundStatus === 'running' ? '正在计时' : '本轮用时'}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="relative flex flex-col items-center py-2 text-center sm:py-5">
-              <div className="mb-4 grid size-20 place-items-center rounded-[26px] bg-[#FFF3BE] text-[#E39B00] shadow-[0_8px_0_#F2D56A]">
-                {score === 100 ? <Trophy className="size-11" strokeWidth={2.4} /> : <PartyPopper className="size-11" strokeWidth={2.4} />}
-              </div>
-              <p className="text-sm font-extrabold text-[#7565DD]">本轮得分</p>
-              <p className="font-title mt-1 text-6xl font-black text-[#6755D9] sm:text-7xl">
-                {score}<span className="ml-1 text-2xl">分</span>
-              </p>
-              <h1 className="font-title mt-4 text-2xl font-black sm:text-3xl">{result?.title}</h1>
-              <p className="mt-2 font-semibold text-[#778298]">{result?.note}</p>
-              <div className="mt-5 flex flex-wrap items-center justify-center gap-3 text-sm font-extrabold">
-                <span className="rounded-full bg-white px-4 py-2 shadow-sm">
-                  <Clock3 className="mr-1.5 inline size-4 text-[#0F8F72]" />用时 {formatDuration(elapsedSeconds)}
-                </span>
-                <span className="rounded-full bg-white px-4 py-2 shadow-sm">
-                  <Target className="mr-1.5 inline size-4 text-[#6755D9]" />答对 {correctAnswersCount} / 30
-                </span>
-              </div>
-              <Button
-                onClick={startNextRound}
-                size="lg"
-                className="mt-6 h-12 rounded-2xl bg-[#6755D9] px-6 text-base font-extrabold shadow-[0_6px_0_#4D3CBE] hover:bg-[#7565DD] active:translate-y-1 active:shadow-[0_2px_0_#4D3CBE]"
-              >
-                <RefreshCw className="size-5" /> 再来一轮新题
-              </Button>
-            </div>
-          )}
-        </section>
-
-        <div className="mt-8 space-y-7">
-          {LEVELS.map((level, levelIndex) => {
-            const levelQuestions = questions.filter((question) => question.level === level.key);
-            const correctInLevel = score === null
-              ? null
-              : levelQuestions.filter((question) => Number(answers[question.id]) === question.answer).length;
-
-            return (
-              <section
-                key={level.key}
-                className={cn('overflow-hidden rounded-[28px] border bg-white/90 shadow-[0_16px_45px_rgba(53,64,91,0.08)]', level.border)}
-              >
-                <div className={cn('flex flex-wrap items-center justify-between gap-4 border-b px-5 py-5 sm:px-7', level.soft, level.border)}>
-                  <div className="flex items-center gap-4">
-                    <span className={cn('grid size-12 place-items-center rounded-2xl bg-white font-title text-xl font-black shadow-sm', level.accent)}>
-                      {levelIndex + 1}
-                    </span>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className={cn('text-xs font-extrabold', level.accent)}>{level.badge}</span>
-                        <ChevronRight className={cn('size-3.5', level.accent)} />
-                        <span className="text-xs font-bold text-[#8A94A7]">共 10 题</span>
-                      </div>
-                      <h2 className="font-title mt-1 text-xl font-black sm:text-2xl">{level.title}</h2>
-                      <p className="mt-0.5 text-xs font-semibold text-[#778298] sm:text-sm">{level.subtitle}</p>
-                    </div>
-                  </div>
-
-                  {correctInLevel !== null && (
-                    <div className="rounded-full bg-white px-4 py-2 text-sm font-extrabold text-[#536078] shadow-sm">
-                      答对 <span className={level.accent}>{correctInLevel}</span> / 10
-                    </div>
-                  )}
-                </div>
-
-                <div className="grid gap-x-8 gap-y-4 p-5 sm:grid-cols-2 sm:p-7 lg:grid-cols-5">
-                  {levelQuestions.map((question, questionIndex) => {
-                    const globalIndex = levelIndex * 10 + questionIndex;
-                    const value = answers[question.id] ?? '';
-                    const isCorrect = score !== null && Number(value) === question.answer;
-                    const isWrong = score !== null && !isCorrect;
-
-                    return (
-                      <div key={question.id} className="group">
-                        <label
-                          htmlFor={question.id}
-                          className={cn(
-                            'flex min-h-[76px] items-center gap-2 rounded-2xl border-2 bg-[#FBFCFE] px-3 transition-all focus-within:-translate-y-0.5 focus-within:border-[#8B7CEB] focus-within:bg-white focus-within:shadow-[0_8px_24px_rgba(103,85,217,0.12)]',
-                            isCorrect && 'border-[#73D3B2] bg-[#F1FBF7]',
-                            isWrong && 'border-[#FF9E8B] bg-[#FFF5F2]',
-                            score === null && 'border-[#E8EBF2]',
-                          )}
-                        >
-                          <span className="w-5 shrink-0 text-xs font-extrabold text-[#A2AABC]">{globalIndex + 1}.</span>
-                          <span className="font-title whitespace-nowrap text-[17px] font-black tracking-tight text-[#334057]">
-                            {question.expression} =
-                          </span>
-                          <Input
-                            ref={(element) => { inputRefs.current[globalIndex] = element; }}
-                            id={question.id}
-                            type="number"
-                            inputMode="numeric"
-                            aria-label={`第 ${globalIndex + 1} 题答案`}
-                            value={value}
-                            disabled={roundStatus !== 'running'}
-                            onChange={(event) => {
-                              setAnswers((current) => ({ ...current, [question.id]: event.target.value }));
-                            }}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter' && globalIndex < questions.length - 1) {
-                                event.preventDefault();
-                                inputRefs.current[globalIndex + 1]?.focus();
-                              }
-                            }}
-                            className={cn(
-                              'h-11 min-w-0 flex-1 rounded-xl border-0 bg-white px-2 text-center font-title text-lg font-black shadow-inner focus-visible:ring-2 focus-visible:ring-[#8B7CEB]/30 disabled:opacity-100',
-                              isCorrect && 'text-[#08775E]',
-                              isWrong && 'text-[#D14936]',
-                            )}
-                          />
-                          {isCorrect && <Check className="size-5 shrink-0 text-[#16A57F]" strokeWidth={3} />}
-                          {isWrong && <CircleAlert className="size-5 shrink-0 text-[#EF725E]" strokeWidth={2.5} />}
-                        </label>
-                        {isWrong && (
-                          <p className="mt-1.5 pl-8 text-xs font-bold text-[#D45745]">
-                            正确答案：{question.answer}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            );
-          })}
-        </div>
-
-        <section id="practice-records" className="mt-8 scroll-mt-6 rounded-[28px] border border-[#DAD3FF] bg-white/90 p-5 shadow-[0_16px_45px_rgba(53,64,91,0.08)] sm:p-7">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-[#F0EDFF] px-3 py-1.5 text-xs font-extrabold text-[#6755D9]">
-                <History className="size-3.5" /> 成长足迹
-              </div>
-              <h2 className="font-title mt-3 text-2xl font-black">答题记录</h2>
-              <p className="mt-1 text-sm font-semibold text-[#778298]">每一次认真完成，都值得被记住。记录保存在这台设备上。</p>
-            </div>
-            {records.length > 0 && (
-              <div className="rounded-2xl bg-[#FFF7D9] px-4 py-2 text-sm font-extrabold text-[#A86600]">
-                最高分 {Math.max(...records.map((item) => item.score))} 分
-              </div>
-            )}
-          </div>
-
-          {!storageReady ? (
-            <p className="mt-5 text-sm font-semibold text-[#8993A6]">正在打开成长档案...</p>
-          ) : records.length === 0 ? (
-            <div className="empty-state mt-5">
-              <Trophy className="size-8 text-[#D3A316]" />
-              <div><strong>还没有答题记录</strong><span>完成第一轮挑战后，成绩会出现在这里。</span></div>
-            </div>
-          ) : (
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {records.map((record, index) => (
-                <article key={record.id} className="record-card">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="grid size-9 place-items-center rounded-xl bg-[#F0EDFF] font-title text-sm font-black text-[#6755D9]">{index + 1}</span>
-                    <time className="text-xs font-bold text-[#929BAD]">{formatRecordDate(record.completedAt)}</time>
-                  </div>
-                  <div className="mt-4 flex items-end justify-between gap-3">
-                    <p className="font-title text-3xl font-black text-[#6755D9]">{record.score}<span className="ml-1 text-sm">分</span></p>
-                    <p className="text-right text-xs font-bold leading-5 text-[#778298]">答对 {record.correctCount} 题<br />用时 {formatDuration(record.durationSeconds)}</p>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section id="wrong-book" className="mt-7 scroll-mt-6 rounded-[28px] border border-[#FFD9CD] bg-white/90 p-5 shadow-[0_16px_45px_rgba(53,64,91,0.08)] sm:p-7">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full bg-[#FFF1EC] px-3 py-1.5 text-xs font-extrabold text-[#E24C38]">
-              <BookOpen className="size-3.5" /> 查漏补缺
-            </div>
-            <h2 className="font-title mt-3 text-2xl font-black">我的错题本</h2>
-            <p className="mt-1 text-sm font-semibold text-[#778298]">错题不是小怪兽，是帮我们进步的藏宝图。</p>
-          </div>
-
-          {!storageReady ? (
-            <p className="mt-5 text-sm font-semibold text-[#8993A6]">正在整理错题...</p>
-          ) : wrongBook.length === 0 ? (
-            <div className="empty-state mt-5">
-              <Star className="size-8 fill-[#FFC740] text-[#E9A900]" />
-              <div><strong>错题本还是空的</strong><span>答错的题会自动收进来，相同题目会累计次数。</span></div>
-            </div>
-          ) : (
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {wrongBook.map((item) => (
-                <article key={`${item.expression}-${item.answer}`} className="wrong-card">
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="font-title text-xl font-black text-[#334057]">{item.expression} = <span className="text-[#0F8F72]">{item.answer}</span></p>
-                    <span className="shrink-0 rounded-full bg-[#FFF1EC] px-2.5 py-1 text-[11px] font-extrabold text-[#E24C38]">错过 {item.mistakes} 次</span>
-                  </div>
-                  <p className="mt-3 text-xs font-bold text-[#8A94A7]">上次答案：<span className="text-[#D45745]">{item.lastAnswer || '未填写'}</span></p>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
-
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-white/80 bg-white/85 px-5 py-4 shadow-[0_-12px_40px_rgba(42,52,77,0.1)] backdrop-blur-xl">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
-          <div className="hidden sm:block">
-            <p className="font-title font-black">
-              {roundStatus === 'idle' ? '准备好就开始挑战' : score === null ? `已完成 ${answeredCount} / 30` : '本轮已经批改完成'}
-            </p>
-            <p className="mt-0.5 text-xs font-semibold text-[#8993A6]">
-              {roundStatus === 'idle' ? '点击开始答题后才会计时' : score === null ? (allAnswered ? '太棒了，现在可以交卷！' : `计时 ${formatDuration(elapsedSeconds)} · 做完全部题目后即可交卷`) : `本轮用时 ${formatDuration(elapsedSeconds)} · 看看错题，再开启新挑战`}
-            </p>
-          </div>
-
-          <div className="flex w-full items-center gap-3 sm:w-auto">
-            <div className="h-2 flex-1 overflow-hidden rounded-full bg-[#E9E6FA] sm:hidden">
-              <div className="h-full rounded-full bg-[#7565DD] transition-all" style={{ width: `${(answeredCount / 30) * 100}%` }} />
-            </div>
-            {roundStatus === 'idle' ? (
-              <Button
-                onClick={startRound}
-                disabled={!storageReady}
-                size="lg"
-                className="h-12 min-w-[148px] rounded-2xl bg-[#F15B45] px-6 text-base font-extrabold shadow-[0_6px_0_#C83F2D] hover:bg-[#FA6C55] active:translate-y-1 active:shadow-[0_2px_0_#C83F2D]"
-              >
-                <Play className="size-5 fill-current" /> 开始答题
-              </Button>
-            ) : score === null ? (
-              <Button
-                onClick={submitAnswers}
-                disabled={!allAnswered}
-                size="lg"
-                className="h-12 min-w-[148px] rounded-2xl bg-[#6755D9] px-6 text-base font-extrabold shadow-[0_6px_0_#4D3CBE] hover:bg-[#7565DD] disabled:shadow-none active:translate-y-1 active:shadow-[0_2px_0_#4D3CBE]"
-              >
-                <Check className="size-5" /> 检查答案
-              </Button>
-            ) : (
-              <Button
-                onClick={startNextRound}
-                size="lg"
-                className="h-12 min-w-[148px] rounded-2xl bg-[#6755D9] px-6 text-base font-extrabold shadow-[0_6px_0_#4D3CBE] hover:bg-[#7565DD] active:translate-y-1 active:shadow-[0_2px_0_#4D3CBE]"
-              >
-                <RefreshCw className="size-5" /> 下一轮
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
-    </main>
-  );
+  const [user, setUser] = useState<User | null | undefined>(undefined);
+  useEffect(() => { void api<{ user: User | null }>('auth/me').then((data) => setUser(data.user)).catch(() => setUser(null)); }, []);
+  const logout = async () => { await api('auth/logout', { method: 'POST' }).catch(() => undefined); setUser(null); };
+  if (user === undefined) return <main className="grid min-h-screen place-items-center"><div className="text-center"><Rocket className="mx-auto size-10 animate-bounce text-[#6755D9]" /><p className="mt-3 font-title font-black">正在飞往口算星球…</p></div></main>;
+  if (!user) return <Login onLogin={setUser} />;
+  if (user.mustChangePassword) return <ChangePassword user={user} onDone={() => setUser({ ...user, mustChangePassword: false })} />;
+  if (user.role === 'child') return <ChildDashboard user={user} onLogout={logout} />;
+  return <ParentDashboard user={user} onLogout={logout} />;
 }

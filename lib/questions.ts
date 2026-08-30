@@ -7,6 +7,8 @@ export type Question = {
   answer: number;
 };
 
+export type QuestionCounts = Record<Level, number>;
+
 function seededRandom(seed: number) {
   let value = seed >>> 0;
   return () => {
@@ -18,16 +20,16 @@ function seededRandom(seed: number) {
   };
 }
 
-export function makeQuestions(seed: number): Question[] {
+export function makeQuestionsForCounts(seed: number, counts: QuestionCounts): Question[] {
   const random = seededRandom(seed);
   const int = (min: number, max: number) =>
     Math.floor(random() * (max - min + 1)) + min;
   const questions: Question[] = [];
 
-  const makeSimple = (limit: number, level: Level) => {
+  const makeSimple = (limit: number, level: Level, count: number) => {
     const used = new Set<string>();
 
-    while (used.size < 10) {
+    while (used.size < count) {
       const isAddition = random() > 0.5;
       let left: number;
       let right: number;
@@ -55,11 +57,11 @@ export function makeQuestions(seed: number): Question[] {
     }
   };
 
-  makeSimple(10, 'starter');
-  makeSimple(20, 'explorer');
+  makeSimple(10, 'starter', counts.starter);
+  makeSimple(20, 'explorer', counts.explorer);
 
   const usedMixed = new Set<string>();
-  while (usedMixed.size < 10) {
+  while (usedMixed.size < counts.challenger) {
     const subtractFirst = random() > 0.5;
     let expression = '';
     let answer = 0;
@@ -97,8 +99,12 @@ export function makeQuestions(seed: number): Question[] {
   return questions;
 }
 
-export function scoreMessage(score: number) {
-  if (score === 100) return { title: '满分！你是口算小冠军！', note: '30 道题全部答对，太厉害啦！' };
+export function makeQuestions(seed: number): Question[] {
+  return makeQuestionsForCounts(seed, { starter: 10, explorer: 10, challenger: 10 });
+}
+
+export function scoreMessage(score: number, total = 30) {
+  if (score === 100) return { title: '满分！你是口算小冠军！', note: `${total} 道题全部答对，太厉害啦！` };
   if (score >= 90) return { title: '太棒了，离满分只差一点！', note: '认真看看错题，下一轮一定更棒。' };
   if (score >= 70) return { title: '很不错，继续加油！', note: '每练一轮，计算速度都会进步。' };
   return { title: '勇敢完成就是进步！', note: '先看看正确答案，再挑战新一轮吧。' };
