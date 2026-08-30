@@ -18,7 +18,7 @@ import { db } from './db.js';
 import { body, method, routePath, send } from './http.js';
 
 type Row = Record<string, unknown>;
-type LoginAttemptRow = { attempt_count: number; blocked_until: string | null };
+type LoginAttemptRow = { attempt_count: number; window_started_at?: string; blocked_until: string | null };
 type LoginUserRow = Row & { id: string; password_hash: string; is_active: boolean };
 type AnswerRow = Row & { id: string; expression: string; correct_answer: number; level: string; answer_text: string | null };
 
@@ -79,6 +79,65 @@ async function login(req: VercelRequest, res: VercelResponse) {
   await sql`DELETE FROM kousuan.login_attempts WHERE bucket = ${bucket}`;
   await createSession(String(user.id), req, res);
   return send(res, 200, { user: publicUser(user as never) });
+}
+
+async function register(req: VercelRequest, res: VercelResponse) {
+  method(req, 'POST');
+  const parsed = z.object({
+    familyName: z.string().trim().min(1, '请输入家庭名称').max(30, '家庭名称最多 30 个字'),
+    displayName: z.string().trim().min(1, '请输入家长称呼').max(20, '家长称呼最多 20 个字'),
+    username: z.string().min(1, '请输入用户名'),
+    password: z.string().min(1, '请输入密码'),
+  }).parse(body(req));
+  const username = validateUsername(parsed.username);
+  validatePassword(parsed.password, 'parent');
+
+  const sql = db();
+  const bucket = createHash('sha256').update(`register:${clientIp(req)}`).digest('hex');
+  const attempts = await sql`SELECT attempt_count, window_started_at, blocked_until
+    FROM kousuan.login_attempts WHERE bucket = ${bucket}` as LoginAttemptRow[];
+  const attempt = attempts[0];
+  const now = new Date();
+  const blockedUntil = attempt?.blocked_until ? new Date(attempt.blocked_until) : null;
+  const windowStartedAt = attempt?.window_started_at ? new Date(attempt.window_started_at) : null;
+  const currentWindow = Boolean(windowStartedAt && windowStartedAt.getTime() > now.getTime() - 60 * 60 * 1000);
+  if ((blockedUntil && blockedUntil > now) || (currentWindow && Number(attempt?.attempt_count ?? 0) >= 5)) {
+    throw Object.assign(new Error('注册次数过多，请一小时后再试'), { statusCode: 429 });
+  }
+
+  const passwordHash = await hashPassword(parsed.password);
+  await sql`INSERT INTO kousuan.login_attempts (bucket, attempt_count, window_started_at, blocked_until)
+    VALUES (${bucket}, 1, now(), NULL)
+    ON CONFLICT (bucket) DO UPDATE SET
+      attempt_count = CASE WHEN kousuan.login_attempts.window_started_at < now() - interval '1 hour' THEN 1 ELSE kousuan.login_attempts.attempt_count + 1 END,
+      window_started_at = CASE WHEN kousuan.login_attempts.window_started_at < now() - interval '1 hour' THEN now() ELSE kousuan.login_attempts.window_started_at END,
+      blocked_until = CASE
+        WHEN kousuan.login_attempts.window_started_at < now() - interval '1 hour' THEN NULL
+        WHEN kousuan.login_attempts.attempt_count + 1 >= 5 THEN now() + interval '1 hour'
+        ELSE kousuan.login_attempts.blocked_until
+      END`;
+
+  const familyId = randomUUID();
+  const userId = randomUUID();
+  try {
+    await sql.transaction([
+      sql`INSERT INTO kousuan.families (id, name) VALUES (${familyId}, ${parsed.familyName})`,
+      sql`INSERT INTO kousuan.users (id, family_id, username, display_name, password_hash, role)
+        VALUES (${userId}, ${familyId}, ${username}, ${parsed.displayName}, ${passwordHash}, 'parent')`,
+      sql`INSERT INTO kousuan.audit_events (family_id, actor_user_id, action, target_user_id)
+        VALUES (${familyId}, ${userId}, 'family.registered', ${userId})`,
+    ]);
+  } catch (error) {
+    if (String(error).includes('users_username_key')) {
+      throw Object.assign(new Error('这个用户名已被使用'), { statusCode: 409 });
+    }
+    throw error;
+  }
+
+  await createSession(userId, req, res);
+  return send(res, 201, {
+    user: { id: userId, username, displayName: parsed.displayName, role: 'parent', mustChangePassword: false },
+  });
 }
 
 async function changePassword(req: VercelRequest, res: VercelResponse) {
@@ -317,6 +376,7 @@ async function wrongBook(req: VercelRequest, res: VercelResponse) {
 export async function handleApi(req: VercelRequest, res: VercelResponse) {
   try {
     const path = routePath(req);
+    if (path === 'auth/register') return await register(req, res);
     if (path === 'auth/login') return await login(req, res);
     if (path === 'auth/logout') { method(req, 'POST'); await destroySession(req, res); return send(res, 200, { ok: true }); }
     if (path === 'auth/me') { method(req, 'GET'); return send(res, 200, { user: publicUser(await currentUser(req)) }); }

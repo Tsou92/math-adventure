@@ -23,7 +23,7 @@ export function normalizeUsername(input: string) {
 export function validateUsername(input: string) {
   const username = normalizeUsername(input);
   if (!/^[a-z0-9_\u4e00-\u9fff]{3,24}$/u.test(username)) {
-    throw new Error('用户名需为 3–24 位中文、字母、数字或下划线');
+    throw Object.assign(new Error('用户名需为 3–24 位中文、字母、数字或下划线'), { statusCode: 400 });
   }
   return username;
 }
@@ -31,7 +31,7 @@ export function validateUsername(input: string) {
 export function validatePassword(password: string, role: 'parent' | 'child') {
   const min = role === 'parent' ? 10 : 6;
   if (password.length < min || password.length > 128 || Buffer.byteLength(password, 'utf8') > 512) {
-    throw new Error(`密码需为 ${min}–128 个字符`);
+    throw Object.assign(new Error(`密码需为 ${min}–128 个字符`), { statusCode: 400 });
   }
   return password;
 }
