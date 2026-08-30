@@ -173,6 +173,83 @@
   color: #9aa2b2;
 }
 
+.mini-stat-card {
+  display: grid;
+  min-width: 0;
+  place-items: center;
+  gap: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 10px 5px;
+  text-align: center;
+  box-shadow: 0 8px 22px rgba(79, 62, 160, 0.08);
+  transition: transform 160ms ease, background-color 160ms ease;
+}
+
+a.mini-stat-card:hover {
+  transform: translateY(-2px);
+  background: white;
+}
+
+.mini-stat-card strong {
+  max-width: 100%;
+  overflow: hidden;
+  color: #334057;
+  font-family: var(--font-title);
+  font-size: 0.9rem;
+  text-overflow: ellipsis;
+}
+
+.mini-stat-card span {
+  color: #929bad;
+  font-size: 0.65rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.empty-state {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border: 2px dashed #e4e0f7;
+  border-radius: 20px;
+  background: #fbfaff;
+  padding: 18px;
+}
+
+.empty-state strong,
+.empty-state span {
+  display: block;
+}
+
+.empty-state strong {
+  color: #536078;
+  font-family: var(--font-title);
+  font-weight: 900;
+}
+
+.empty-state span {
+  margin-top: 3px;
+  color: #929bad;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.record-card,
+.wrong-card {
+  border: 1px solid #ece9f8;
+  border-radius: 20px;
+  background: linear-gradient(145deg, #ffffff, #fbfaff);
+  padding: 16px;
+  box-shadow: 0 8px 24px rgba(53, 64, 91, 0.06);
+}
+
+.wrong-card {
+  border-color: #ffe2da;
+  background: linear-gradient(145deg, #ffffff, #fff9f7);
+}
+
 input[type='number']::-webkit-inner-spin-button,
 input[type='number']::-webkit-outer-spin-button {
   margin: 0;

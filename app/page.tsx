@@ -1,15 +1,20 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  BookOpen,
   Check,
   ChevronRight,
   CircleAlert,
+  Clock3,
+  History,
   PartyPopper,
+  Play,
   RefreshCw,
   Rocket,
   Sparkles,
   Star,
+  Target,
   Trophy,
 } from 'lucide-react';
 
@@ -56,24 +61,149 @@ const LEVELS: Array<{
   },
 ];
 
+type RoundStatus = 'idle' | 'running' | 'finished';
+
+type PracticeRecord = {
+  id: string;
+  completedAt: string;
+  durationSeconds: number;
+  score: number;
+  correctCount: number;
+};
+
+type WrongQuestion = {
+  expression: string;
+  answer: number;
+  lastAnswer: string;
+  level: Level;
+  mistakes: number;
+  lastSeenAt: string;
+};
+
+const RECORDS_KEY = 'kousuan-planet-records-v1';
+const WRONG_BOOK_KEY = 'kousuan-planet-wrong-book-v1';
+
+function readStorage<T>(key: string, fallback: T): T {
+  try {
+    const saved = window.localStorage.getItem(key);
+    return saved ? JSON.parse(saved) as T : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function formatDuration(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function formatRecordDate(value: string) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value));
+}
+
 export default function Home() {
   const [roundSeed, setRoundSeed] = useState(438721);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [score, setScore] = useState<number | null>(null);
+  const [roundStatus, setRoundStatus] = useState<RoundStatus>('idle');
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [records, setRecords] = useState<PracticeRecord[]>([]);
+  const [wrongBook, setWrongBook] = useState<WrongQuestion[]>([]);
+  const [storageReady, setStorageReady] = useState(false);
   const inputRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const startedAtRef = useRef<number | null>(null);
   const questions = useMemo(() => makeQuestions(roundSeed), [roundSeed]);
+
+  useEffect(() => {
+    const loadStorage = window.setTimeout(() => {
+      setRecords(readStorage<PracticeRecord[]>(RECORDS_KEY, []));
+      setWrongBook(readStorage<WrongQuestion[]>(WRONG_BOOK_KEY, []));
+      setStorageReady(true);
+    }, 0);
+    return () => window.clearTimeout(loadStorage);
+  }, []);
+
+  useEffect(() => {
+    if (roundStatus !== 'running') return;
+
+    const updateElapsed = () => {
+      if (startedAtRef.current === null) return;
+      setElapsedSeconds(Math.floor((Date.now() - startedAtRef.current) / 1000));
+    };
+
+    updateElapsed();
+    const interval = window.setInterval(updateElapsed, 250);
+    return () => window.clearInterval(interval);
+  }, [roundStatus]);
 
   const answeredCount = questions.filter(
     (question) => (answers[question.id] ?? '').trim() !== '',
   ).length;
   const allAnswered = answeredCount === questions.length;
+  const correctAnswersCount = score === null
+    ? 0
+    : questions.filter((question) => Number(answers[question.id]) === question.answer).length;
+
+  const startRound = () => {
+    startedAtRef.current = Date.now();
+    setElapsedSeconds(0);
+    setRoundStatus('running');
+    window.setTimeout(() => inputRefs.current[0]?.focus(), 80);
+  };
 
   const submitAnswers = () => {
-    if (!allAnswered) return;
+    if (!allAnswered || roundStatus !== 'running') return;
     const correct = questions.filter(
       (question) => Number(answers[question.id]) === question.answer,
     ).length;
-    setScore(Math.round((correct / questions.length) * 100));
+    const finalScore = Math.round((correct / questions.length) * 100);
+    const finalDuration = startedAtRef.current === null
+      ? elapsedSeconds
+      : Math.floor((Date.now() - startedAtRef.current) / 1000);
+    const completedAt = new Date().toISOString();
+    const record: PracticeRecord = {
+      id: `${Date.now()}-${roundSeed}`,
+      completedAt,
+      durationSeconds: finalDuration,
+      score: finalScore,
+      correctCount: correct,
+    };
+    const nextRecords = [record, ...records].slice(0, 50);
+    const wrongAnswers = questions.filter(
+      (question) => Number(answers[question.id]) !== question.answer,
+    );
+    const nextWrongBook = [...wrongBook];
+
+    wrongAnswers.forEach((question) => {
+      const existingIndex = nextWrongBook.findIndex(
+        (item) => item.expression === question.expression && item.answer === question.answer,
+      );
+      const nextItem: WrongQuestion = {
+        expression: question.expression,
+        answer: question.answer,
+        lastAnswer: answers[question.id] ?? '',
+        level: question.level,
+        mistakes: existingIndex >= 0 ? nextWrongBook[existingIndex].mistakes + 1 : 1,
+        lastSeenAt: completedAt,
+      };
+
+      if (existingIndex >= 0) nextWrongBook.splice(existingIndex, 1);
+      nextWrongBook.unshift(nextItem);
+    });
+
+    setElapsedSeconds(finalDuration);
+    setRoundStatus('finished');
+    setScore(finalScore);
+    setRecords(nextRecords);
+    setWrongBook(nextWrongBook);
+    window.localStorage.setItem(RECORDS_KEY, JSON.stringify(nextRecords));
+    window.localStorage.setItem(WRONG_BOOK_KEY, JSON.stringify(nextWrongBook));
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -81,6 +211,9 @@ export default function Home() {
     setRoundSeed(Math.floor(Math.random() * 2_000_000_000));
     setAnswers({});
     setScore(null);
+    setRoundStatus('idle');
+    setElapsedSeconds(0);
+    startedAtRef.current = null;
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -129,8 +262,18 @@ export default function Home() {
                   <span className="text-[#6755D9]">闯过 3 关</span>，收集智慧星！
                 </h1>
                 <p className="mt-4 max-w-xl text-sm font-semibold leading-7 text-[#6F7B91] sm:text-base">
-                  一共 30 道题。认真算一算，全部完成后就能检查答案、看看自己的得分。
+                  一共 30 道题。点击开始后计时，全部完成就能自动批改，成绩和错题也会帮你保存好。
                 </p>
+                {roundStatus === 'idle' && (
+                  <Button
+                    onClick={startRound}
+                    disabled={!storageReady}
+                    size="lg"
+                    className="mt-6 h-13 rounded-2xl bg-[#F15B45] px-7 text-base font-extrabold shadow-[0_6px_0_#C83F2D] hover:bg-[#FA6C55] active:translate-y-1 active:shadow-[0_2px_0_#C83F2D]"
+                  >
+                    <Play className="size-5 fill-current" /> 开始答题
+                  </Button>
+                )}
               </div>
 
               <div className="space-y-3">
@@ -153,6 +296,23 @@ export default function Home() {
                     </p>
                   </div>
                 </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <a href="#practice-records" className="mini-stat-card">
+                    <History className="size-4 text-[#6755D9]" />
+                    <strong>{records.length}</strong>
+                    <span>答题记录</span>
+                  </a>
+                  <a href="#wrong-book" className="mini-stat-card">
+                    <BookOpen className="size-4 text-[#F15B45]" />
+                    <strong>{wrongBook.length}</strong>
+                    <span>错题本</span>
+                  </a>
+                  <div className="mini-stat-card">
+                    <Clock3 className="size-4 text-[#0F8F72]" />
+                    <strong>{formatDuration(elapsedSeconds)}</strong>
+                    <span>{roundStatus === 'running' ? '正在计时' : '本轮用时'}</span>
+                  </div>
+                </div>
               </div>
             </div>
           ) : (
@@ -166,6 +326,14 @@ export default function Home() {
               </p>
               <h1 className="font-title mt-4 text-2xl font-black sm:text-3xl">{result?.title}</h1>
               <p className="mt-2 font-semibold text-[#778298]">{result?.note}</p>
+              <div className="mt-5 flex flex-wrap items-center justify-center gap-3 text-sm font-extrabold">
+                <span className="rounded-full bg-white px-4 py-2 shadow-sm">
+                  <Clock3 className="mr-1.5 inline size-4 text-[#0F8F72]" />用时 {formatDuration(elapsedSeconds)}
+                </span>
+                <span className="rounded-full bg-white px-4 py-2 shadow-sm">
+                  <Target className="mr-1.5 inline size-4 text-[#6755D9]" />答对 {correctAnswersCount} / 30
+                </span>
+              </div>
               <Button
                 onClick={startNextRound}
                 size="lg"
@@ -241,7 +409,7 @@ export default function Home() {
                             inputMode="numeric"
                             aria-label={`第 ${globalIndex + 1} 题答案`}
                             value={value}
-                            disabled={score !== null}
+                            disabled={roundStatus !== 'running'}
                             onChange={(event) => {
                               setAnswers((current) => ({ ...current, [question.id]: event.target.value }));
                             }}
@@ -273,14 +441,88 @@ export default function Home() {
             );
           })}
         </div>
+
+        <section id="practice-records" className="mt-8 scroll-mt-6 rounded-[28px] border border-[#DAD3FF] bg-white/90 p-5 shadow-[0_16px_45px_rgba(53,64,91,0.08)] sm:p-7">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full bg-[#F0EDFF] px-3 py-1.5 text-xs font-extrabold text-[#6755D9]">
+                <History className="size-3.5" /> 成长足迹
+              </div>
+              <h2 className="font-title mt-3 text-2xl font-black">答题记录</h2>
+              <p className="mt-1 text-sm font-semibold text-[#778298]">每一次认真完成，都值得被记住。记录保存在这台设备上。</p>
+            </div>
+            {records.length > 0 && (
+              <div className="rounded-2xl bg-[#FFF7D9] px-4 py-2 text-sm font-extrabold text-[#A86600]">
+                最高分 {Math.max(...records.map((item) => item.score))} 分
+              </div>
+            )}
+          </div>
+
+          {!storageReady ? (
+            <p className="mt-5 text-sm font-semibold text-[#8993A6]">正在打开成长档案...</p>
+          ) : records.length === 0 ? (
+            <div className="empty-state mt-5">
+              <Trophy className="size-8 text-[#D3A316]" />
+              <div><strong>还没有答题记录</strong><span>完成第一轮挑战后，成绩会出现在这里。</span></div>
+            </div>
+          ) : (
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {records.map((record, index) => (
+                <article key={record.id} className="record-card">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="grid size-9 place-items-center rounded-xl bg-[#F0EDFF] font-title text-sm font-black text-[#6755D9]">{index + 1}</span>
+                    <time className="text-xs font-bold text-[#929BAD]">{formatRecordDate(record.completedAt)}</time>
+                  </div>
+                  <div className="mt-4 flex items-end justify-between gap-3">
+                    <p className="font-title text-3xl font-black text-[#6755D9]">{record.score}<span className="ml-1 text-sm">分</span></p>
+                    <p className="text-right text-xs font-bold leading-5 text-[#778298]">答对 {record.correctCount} 题<br />用时 {formatDuration(record.durationSeconds)}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section id="wrong-book" className="mt-7 scroll-mt-6 rounded-[28px] border border-[#FFD9CD] bg-white/90 p-5 shadow-[0_16px_45px_rgba(53,64,91,0.08)] sm:p-7">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full bg-[#FFF1EC] px-3 py-1.5 text-xs font-extrabold text-[#E24C38]">
+              <BookOpen className="size-3.5" /> 查漏补缺
+            </div>
+            <h2 className="font-title mt-3 text-2xl font-black">我的错题本</h2>
+            <p className="mt-1 text-sm font-semibold text-[#778298]">错题不是小怪兽，是帮我们进步的藏宝图。</p>
+          </div>
+
+          {!storageReady ? (
+            <p className="mt-5 text-sm font-semibold text-[#8993A6]">正在整理错题...</p>
+          ) : wrongBook.length === 0 ? (
+            <div className="empty-state mt-5">
+              <Star className="size-8 fill-[#FFC740] text-[#E9A900]" />
+              <div><strong>错题本还是空的</strong><span>答错的题会自动收进来，相同题目会累计次数。</span></div>
+            </div>
+          ) : (
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {wrongBook.map((item) => (
+                <article key={`${item.expression}-${item.answer}`} className="wrong-card">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="font-title text-xl font-black text-[#334057]">{item.expression} = <span className="text-[#0F8F72]">{item.answer}</span></p>
+                    <span className="shrink-0 rounded-full bg-[#FFF1EC] px-2.5 py-1 text-[11px] font-extrabold text-[#E24C38]">错过 {item.mistakes} 次</span>
+                  </div>
+                  <p className="mt-3 text-xs font-bold text-[#8A94A7]">上次答案：<span className="text-[#D45745]">{item.lastAnswer || '未填写'}</span></p>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
 
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-white/80 bg-white/85 px-5 py-4 shadow-[0_-12px_40px_rgba(42,52,77,0.1)] backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
           <div className="hidden sm:block">
-            <p className="font-title font-black">{score === null ? `已完成 ${answeredCount} / 30` : '本轮已经批改完成'}</p>
+            <p className="font-title font-black">
+              {roundStatus === 'idle' ? '准备好就开始挑战' : score === null ? `已完成 ${answeredCount} / 30` : '本轮已经批改完成'}
+            </p>
             <p className="mt-0.5 text-xs font-semibold text-[#8993A6]">
-              {score === null ? (allAnswered ? '太棒了，现在可以交卷！' : '做完全部题目后即可交卷') : '看看错题，再开启新的挑战'}
+              {roundStatus === 'idle' ? '点击开始答题后才会计时' : score === null ? (allAnswered ? '太棒了，现在可以交卷！' : `计时 ${formatDuration(elapsedSeconds)} · 做完全部题目后即可交卷`) : `本轮用时 ${formatDuration(elapsedSeconds)} · 看看错题，再开启新挑战`}
             </p>
           </div>
 
@@ -288,7 +530,16 @@ export default function Home() {
             <div className="h-2 flex-1 overflow-hidden rounded-full bg-[#E9E6FA] sm:hidden">
               <div className="h-full rounded-full bg-[#7565DD] transition-all" style={{ width: `${(answeredCount / 30) * 100}%` }} />
             </div>
-            {score === null ? (
+            {roundStatus === 'idle' ? (
+              <Button
+                onClick={startRound}
+                disabled={!storageReady}
+                size="lg"
+                className="h-12 min-w-[148px] rounded-2xl bg-[#F15B45] px-6 text-base font-extrabold shadow-[0_6px_0_#C83F2D] hover:bg-[#FA6C55] active:translate-y-1 active:shadow-[0_2px_0_#C83F2D]"
+              >
+                <Play className="size-5 fill-current" /> 开始答题
+              </Button>
+            ) : score === null ? (
               <Button
                 onClick={submitAnswers}
                 disabled={!allAnswered}
