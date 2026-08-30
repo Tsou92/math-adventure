@@ -174,7 +174,7 @@ export default function Home() {
       score: finalScore,
       correctCount: correct,
     };
-    const nextRecords = [record, ...records].slice(0, 50);
+    const nextRecords = [record, ...records];
     const wrongAnswers = questions.filter(
       (question) => Number(answers[question.id]) !== question.answer,
     );
