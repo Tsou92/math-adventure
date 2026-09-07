@@ -29,6 +29,7 @@ export function makeQuestionsForCounts(seed: number, counts: QuestionCounts, opt
   const int = (min: number, max: number) =>
     Math.floor(random() * (max - min + 1)) + min;
   const questions: Question[] = [];
+  let zeroOperandCount = 0;
 
   const makeSimple = (limit: number, level: Level, count: number) => {
     const used = new Set<string>();
@@ -54,8 +55,12 @@ export function makeQuestionsForCounts(seed: number, counts: QuestionCounts, opt
       if (used.has(expression)) continue;
       // 零答案偶尔出现有练习价值，但不应在同一类题中扎堆。
       if (answer === 0 && (zeroAnswerCount >= 1 || random() > 0.2)) continue;
+      // 含 0 的计算题只少量保留，避免 +0、−0 占据太多练习题。
+      const hasZeroOperand = left === 0 || right === 0;
+      if (hasZeroOperand && (zeroOperandCount >= 2 || random() > 0.08)) continue;
       used.add(expression);
       if (answer === 0) zeroAnswerCount += 1;
+      if (hasZeroOperand) zeroOperandCount += 1;
       questions.push({
         id: `${level}-${used.size}`,
         level,

@@ -39,6 +39,19 @@ describe('makeQuestionsForCounts', () => {
     expect(zeroAnswers / total).toBeLessThan(0.03);
   });
 
+  it('每轮基础题最多只有两道含 0 运算数的题，且总体占比保持较低', () => {
+    let zeroOperands = 0;
+    let total = 0;
+    for (let seed = 1; seed <= 1_000; seed += 1) {
+      const questions = makeQuestionsForCounts(seed, { starter: 10, explorer: 10, challenger: 0 });
+      const count = questions.filter((question) => question.expression.split(' ').includes('0')).length;
+      expect(count).toBeLessThanOrEqual(2);
+      zeroOperands += count;
+      total += questions.length;
+    }
+    expect(zeroOperands / total).toBeLessThan(0.04);
+  });
+
   it('默认生成 100 以内单步进退位加减法', () => {
     const questions = makeQuestionsForCounts(24680, { starter: 0, explorer: 0, challenger: 50 });
     expect(questions).toHaveLength(50);
