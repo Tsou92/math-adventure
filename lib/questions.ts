@@ -1,4 +1,9 @@
-export type Level = 'starter' | 'explorer' | 'challenger';
+export type Level =
+  | 'starter'
+  | 'explorer'
+  | 'challenger'
+  | 'multiplyMeaning'
+  | 'multiplyFacts';
 
 export type Question = {
   id: string;
@@ -13,6 +18,17 @@ export type QuestionOptions = {
   challengerChain?: boolean;
 };
 
+export function totalQuestions(counts: QuestionCounts) {
+  return Object.values(counts).reduce((total, count) => total + count, 0);
+}
+
+export function normalizeQuestionCount(value: string | number) {
+  if (value === '') return 0;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.min(50, Math.max(0, Math.trunc(parsed)));
+}
+
 function seededRandom(seed: number) {
   let value = seed >>> 0;
   return () => {
@@ -24,7 +40,11 @@ function seededRandom(seed: number) {
   };
 }
 
-export function makeQuestionsForCounts(seed: number, counts: QuestionCounts, options: QuestionOptions = {}): Question[] {
+export function makeQuestionsForCounts(
+  seed: number,
+  counts: QuestionCounts,
+  options: QuestionOptions = {},
+): Question[] {
   const random = seededRandom(seed);
   const int = (min: number, max: number) =>
     Math.floor(random() * (max - min + 1)) + min;
@@ -57,7 +77,8 @@ export function makeQuestionsForCounts(seed: number, counts: QuestionCounts, opt
       if (answer === 0 && (zeroAnswerCount >= 1 || random() > 0.2)) continue;
       // 含 0 的计算题只少量保留，避免 +0、−0 占据太多练习题。
       const hasZeroOperand = left === 0 || right === 0;
-      if (hasZeroOperand && (zeroOperandCount >= 2 || random() > 0.08)) continue;
+      if (hasZeroOperand && (zeroOperandCount >= 2 || random() > 0.08))
+        continue;
       used.add(expression);
       if (answer === 0) zeroAnswerCount += 1;
       if (hasZeroOperand) zeroOperandCount += 1;
@@ -139,16 +160,95 @@ export function makeQuestionsForCounts(seed: number, counts: QuestionCounts, opt
     });
   }
 
+  const usedMeanings = new Set<string>();
+  while (usedMeanings.size < counts.multiplyMeaning) {
+    const groups = int(2, 6);
+    const groupSize = int(2, 9);
+    const product = groups * groupSize;
+    const kind = usedMeanings.size % 6;
+    let expression: string;
+    let answer: number;
+
+    if (kind === 0) {
+      expression = `${Array.from({ length: groups }, () => groupSize).join(' + ')} 可以写成 ${groupSize} × 几`;
+      answer = groups;
+    } else if (kind === 1) {
+      expression = `${groups} 个 ${groupSize} 相加，和是`;
+      answer = product;
+    } else if (kind === 2) {
+      expression = `每组 ${groupSize} 个，有 ${groups} 组，一共有`;
+      answer = product;
+    } else if (kind === 3) {
+      expression = `把 ${groups} × ${groupSize} 交换两个乘数，得到 ${groupSize} × 几`;
+      answer = groups;
+    } else if (kind === 4) {
+      expression = `${groups} × ${groupSize} = ${product}，一个乘数是 ${groups}，另一个乘数是`;
+      answer = groupSize;
+    } else {
+      expression = `${groupSize} × ${groups} 可以看成几个 ${groupSize} 相加`;
+      answer = groups;
+    }
+
+    if (usedMeanings.has(expression)) continue;
+    usedMeanings.add(expression);
+    questions.push({
+      id: `multiplyMeaning-${usedMeanings.size}`,
+      level: 'multiplyMeaning',
+      expression,
+      answer,
+    });
+  }
+
+  const usedFacts = new Set<string>();
+  while (usedFacts.size < counts.multiplyFacts) {
+    const left = int(2, 9);
+    const right = int(2, 9);
+    const expression = `${left} × ${right}`;
+    if (usedFacts.has(expression)) continue;
+    usedFacts.add(expression);
+    questions.push({
+      id: `multiplyFacts-${usedFacts.size}`,
+      level: 'multiplyFacts',
+      expression,
+      answer: left * right,
+    });
+  }
+
   return questions;
 }
 
 export function makeQuestions(seed: number): Question[] {
-  return makeQuestionsForCounts(seed, { starter: 10, explorer: 10, challenger: 10 }, { challengerChain: true });
+  return makeQuestionsForCounts(
+    seed,
+    {
+      starter: 10,
+      explorer: 10,
+      challenger: 10,
+      multiplyMeaning: 0,
+      multiplyFacts: 0,
+    },
+    { challengerChain: true },
+  );
 }
 
 export function scoreMessage(score: number, total = 30) {
-  if (score === 100) return { title: '满分！你是口算小冠军！', note: `${total} 道题全部答对，太厉害啦！` };
-  if (score >= 90) return { title: '太棒了，离满分只差一点！', note: '认真看看错题，下一轮一定更棒。' };
-  if (score >= 70) return { title: '很不错，继续加油！', note: '每练一轮，计算速度都会进步。' };
-  return { title: '勇敢完成就是进步！', note: '先看看正确答案，再挑战新一轮吧。' };
+  if (score === 100)
+    return {
+      title: '满分！你是口算小冠军！',
+      note: `${total} 道题全部答对，太厉害啦！`,
+    };
+  if (score >= 90)
+    return {
+      title: '太棒了，离满分只差一点！',
+      note: '认真看看错题，下一轮一定更棒。',
+    };
+  if (score >= 70)
+    return {
+      title: '很不错，继续加油！',
+      note: '每练一轮，计算速度都会进步。',
+    };
+  return {
+    title: '勇敢完成就是进步！',
+    note: '先看看正确答案，再挑战新一轮吧。',
+  };
 }
