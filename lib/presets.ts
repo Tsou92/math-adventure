@@ -11,28 +11,29 @@ export type PracticePreset = {
   color: string;
   recommended?: boolean;
   counts: QuestionCounts;
+  challengerChain: boolean;
 };
 
 export const PRESETS: PracticePreset[] = [
   {
     key: 'sprout', version: 1, name: '星芽启航', emoji: '🌱', color: 'coral',
-    description: '轻松热身，建立信心', counts: { starter: 10, explorer: 0, challenger: 0 },
+    description: '轻松热身，建立信心', counts: { starter: 10, explorer: 0, challenger: 0 }, challengerChain: false,
   },
   {
     key: 'forest', version: 1, name: '森林成长', emoji: '🌳', color: 'green',
-    description: '从基础走向进阶', counts: { starter: 5, explorer: 10, challenger: 0 },
+    description: '从基础走向进阶', counts: { starter: 5, explorer: 10, challenger: 0 }, challengerChain: false,
   },
   {
     key: 'balanced', version: 1, name: '均衡冒险', emoji: '🚀', color: 'purple', recommended: true,
-    description: '三种题型均衡练习', counts: { starter: 10, explorer: 10, challenger: 10 },
+    description: '三种题型均衡练习', counts: { starter: 10, explorer: 10, challenger: 10 }, challengerChain: false,
   },
   {
     key: 'rocket', version: 1, name: '火箭进阶', emoji: '🔥', color: 'orange',
-    description: '强化进退位混合运算', counts: { starter: 5, explorer: 10, challenger: 15 },
+    description: '强化100以内连加连减', counts: { starter: 5, explorer: 10, challenger: 15 }, challengerChain: true,
   },
   {
     key: 'planet', version: 1, name: '星球挑战', emoji: '🪐', color: 'blue',
-    description: '高手的耐力大挑战', counts: { starter: 0, explorer: 10, challenger: 30 },
+    description: '高手的连算耐力大挑战', counts: { starter: 0, explorer: 10, challenger: 30 }, challengerChain: true,
   },
 ];
 

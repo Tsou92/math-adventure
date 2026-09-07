@@ -9,6 +9,10 @@ export type Question = {
 
 export type QuestionCounts = Record<Level, number>;
 
+export type QuestionOptions = {
+  challengerChain?: boolean;
+};
+
 function seededRandom(seed: number) {
   let value = seed >>> 0;
   return () => {
@@ -20,7 +24,7 @@ function seededRandom(seed: number) {
   };
 }
 
-export function makeQuestionsForCounts(seed: number, counts: QuestionCounts): Question[] {
+export function makeQuestionsForCounts(seed: number, counts: QuestionCounts, options: QuestionOptions = {}): Question[] {
   const random = seededRandom(seed);
   const int = (min: number, max: number) =>
     Math.floor(random() * (max - min + 1)) + min;
@@ -28,6 +32,7 @@ export function makeQuestionsForCounts(seed: number, counts: QuestionCounts): Qu
 
   const makeSimple = (limit: number, level: Level, count: number) => {
     const used = new Set<string>();
+    let zeroAnswerCount = 0;
 
     while (used.size < count) {
       const isAddition = random() > 0.5;
@@ -47,7 +52,10 @@ export function makeQuestionsForCounts(seed: number, counts: QuestionCounts): Qu
 
       const expression = `${left} ${isAddition ? '+' : '−'} ${right}`;
       if (used.has(expression)) continue;
+      // 零答案偶尔出现有练习价值，但不应在同一类题中扎堆。
+      if (answer === 0 && (zeroAnswerCount >= 1 || random() > 0.2)) continue;
       used.add(expression);
+      if (answer === 0) zeroAnswerCount += 1;
       questions.push({
         id: `${level}-${used.size}`,
         level,
@@ -60,8 +68,38 @@ export function makeQuestionsForCounts(seed: number, counts: QuestionCounts): Qu
   makeSimple(10, 'starter', counts.starter);
   makeSimple(20, 'explorer', counts.explorer);
 
-  const usedMixed = new Set<string>();
-  while (usedMixed.size < counts.challenger) {
+  const usedChallenger = new Set<string>();
+  while (usedChallenger.size < counts.challenger) {
+    if (!options.challengerChain) {
+      const isAddition = random() > 0.5;
+      let left: number;
+      let right: number;
+      let answer: number;
+
+      if (isAddition) {
+        left = int(10, 89);
+        right = int(10, 100 - left);
+        if ((left % 10) + (right % 10) < 10) continue;
+        answer = left + right;
+      } else {
+        left = int(20, 99);
+        right = int(10, left - 1);
+        if (left % 10 >= right % 10) continue;
+        answer = left - right;
+      }
+
+      const expression = `${left} ${isAddition ? '+' : '−'} ${right}`;
+      if (usedChallenger.has(expression)) continue;
+      usedChallenger.add(expression);
+      questions.push({
+        id: `challenger-${usedChallenger.size}`,
+        level: 'challenger',
+        expression,
+        answer,
+      });
+      continue;
+    }
+
     const subtractFirst = random() > 0.5;
     let expression = '';
     let answer = 0;
@@ -86,10 +124,10 @@ export function makeQuestionsForCounts(seed: number, counts: QuestionCounts): Qu
       answer = middle - subtract;
     }
 
-    if (usedMixed.has(expression)) continue;
-    usedMixed.add(expression);
+    if (usedChallenger.has(expression)) continue;
+    usedChallenger.add(expression);
     questions.push({
-      id: `challenger-${usedMixed.size}`,
+      id: `challenger-${usedChallenger.size}`,
       level: 'challenger',
       expression,
       answer,
@@ -100,7 +138,7 @@ export function makeQuestionsForCounts(seed: number, counts: QuestionCounts): Qu
 }
 
 export function makeQuestions(seed: number): Question[] {
-  return makeQuestionsForCounts(seed, { starter: 10, explorer: 10, challenger: 10 });
+  return makeQuestionsForCounts(seed, { starter: 10, explorer: 10, challenger: 10 }, { challengerChain: true });
 }
 
 export function scoreMessage(score: number, total = 30) {

@@ -207,6 +207,9 @@ async function childAction(req: VercelRequest, res: VercelResponse, childId: str
 }
 
 function serializeRound(round: Row, questions: Row[]) {
+  const challengerChain = questions.some((question) =>
+    question.level === 'challenger' && ((String(question.expression).match(/[+−]/g) ?? []).length > 1),
+  );
   return {
     id: round.id,
     status: round.status,
@@ -215,6 +218,8 @@ function serializeRound(round: Row, questions: Row[]) {
     counts: { starter: round.starter_count, explorer: round.explorer_count, challenger: round.challenger_count },
     totalCount: round.total_count,
     startedAt: round.started_at,
+    completedAt: round.completed_at,
+    challengerChain,
     questions: questions.map((question) => ({
       id: question.id, position: question.position, level: question.level, expression: question.expression,
       answer: question.answer_text ?? '', isCorrect: question.is_correct,
@@ -239,7 +244,7 @@ async function createRound(req: VercelRequest, res: VercelResponse) {
   const user = await requireUser(req, ['child']);
   const input = z.discriminatedUnion('source', [
     z.object({ source: z.literal('preset'), presetKey: z.string(), presetVersion: z.number().int(), idempotencyKey: z.uuid() }),
-    z.object({ source: z.literal('custom'), counts: countSchema, idempotencyKey: z.uuid() }),
+    z.object({ source: z.literal('custom'), counts: countSchema, challengerChain: z.boolean().default(false), idempotencyKey: z.uuid() }),
   ]).parse(body(req));
   const sql = db();
   const duplicate = await sql`SELECT id FROM kousuan.practice_rounds WHERE user_id = ${user.id} AND idempotency_key = ${input.idempotencyKey}` as Row[];
@@ -249,6 +254,7 @@ async function createRound(req: VercelRequest, res: VercelResponse) {
 
   let counts: QuestionCounts;
   let packageName: string;
+  let challengerChain = false;
   let presetKey: string | null = null;
   let presetVersion: number | null = null;
   if (input.source === 'preset') {
@@ -258,13 +264,15 @@ async function createRound(req: VercelRequest, res: VercelResponse) {
     packageName = preset.name;
     presetKey = preset.key;
     presetVersion = preset.version;
+    challengerChain = preset.challengerChain;
   } else {
     counts = input.counts;
     packageName = '自选练习';
+    challengerChain = input.challengerChain;
   }
   const roundId = randomUUID();
   const seed = randomInt(1, 2_000_000_000);
-  const generated = makeQuestionsForCounts(seed, counts);
+  const generated = makeQuestionsForCounts(seed, counts, { challengerChain });
   const statements = [
     sql`INSERT INTO kousuan.practice_rounds (id, user_id, family_id, idempotency_key, source, preset_key, preset_version, package_name, starter_count, explorer_count, challenger_count, total_count, seed)
       VALUES (${roundId}, ${user.id}, ${user.family_id}, ${input.idempotencyKey}, ${input.source}, ${presetKey}, ${presetVersion}, ${packageName}, ${counts.starter}, ${counts.explorer}, ${counts.challenger}, ${generated.length}, ${seed})`,
@@ -343,9 +351,11 @@ async function roundAction(req: VercelRequest, res: VercelResponse, roundId: str
     const active = await sql`SELECT id FROM kousuan.practice_rounds WHERE user_id = ${user.id} AND status IN ('generated', 'started') LIMIT 1` as Row[];
     if (active[0]) throw Object.assign(new Error('请先完成当前练习'), { statusCode: 409 });
     const counts = { starter: Number(source[0].starter_count), explorer: Number(source[0].explorer_count), challenger: Number(source[0].challenger_count) };
+    const sourceQuestions = await sql`SELECT expression FROM kousuan.round_questions WHERE round_id = ${roundId} AND level = 'challenger'` as Row[];
+    const challengerChain = sourceQuestions.some((question) => ((String(question.expression).match(/[+−]/g) ?? []).length > 1));
     const newId = randomUUID();
     const seed = randomInt(1, 2_000_000_000);
-    const generated = makeQuestionsForCounts(seed, counts);
+    const generated = makeQuestionsForCounts(seed, counts, { challengerChain });
     await sql.transaction([
       sql`INSERT INTO kousuan.practice_rounds (id, user_id, family_id, idempotency_key, source, package_name, starter_count, explorer_count, challenger_count, total_count, seed)
         VALUES (${newId}, ${user.id}, ${user.family_id}, ${parsed.idempotencyKey}, 'repeat', ${`${String(source[0].package_name)}·再练一次`}, ${counts.starter}, ${counts.explorer}, ${counts.challenger}, ${generated.length}, ${seed})`,
@@ -359,9 +369,31 @@ async function roundAction(req: VercelRequest, res: VercelResponse, roundId: str
 async function records(req: VercelRequest, res: VercelResponse) {
   method(req, 'GET');
   const user = await requireUser(req, ['child']);
-  const rows = await db()`SELECT id, package_name, starter_count, explorer_count, challenger_count, total_count,
-      score, correct_count, duration_seconds, completed_at FROM kousuan.practice_rounds
-    WHERE user_id = ${user.id} AND status = 'completed' ORDER BY completed_at DESC LIMIT 100`;
+  const rows = await db()`WITH recent AS (
+      SELECT id, package_name, starter_count, explorer_count, challenger_count, total_count,
+        score, correct_count, duration_seconds, started_at, completed_at
+      FROM kousuan.practice_rounds
+      WHERE user_id = ${user.id} AND status = 'completed'
+      ORDER BY completed_at DESC
+      LIMIT 5
+    )
+    SELECT recent.*,
+      coalesce(json_agg(json_build_object(
+        'id', q.id,
+        'position', q.position,
+        'level', q.level,
+        'expression', q.expression,
+        'answer', a.answer_text,
+        'isCorrect', a.is_correct,
+        'correctAnswer', q.correct_answer
+      ) ORDER BY q.position) FILTER (WHERE q.id IS NOT NULL), '[]'::json) AS questions
+    FROM recent
+    LEFT JOIN kousuan.round_questions q ON q.round_id = recent.id
+    LEFT JOIN kousuan.practice_answers a ON a.question_id = q.id
+    GROUP BY recent.id, recent.package_name, recent.starter_count, recent.explorer_count,
+      recent.challenger_count, recent.total_count, recent.score, recent.correct_count,
+      recent.duration_seconds, recent.started_at, recent.completed_at
+    ORDER BY recent.completed_at DESC`;
   return send(res, 200, { records: rows });
 }
 
