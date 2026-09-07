@@ -309,7 +309,8 @@ a.mini-stat-card:hover {
 .preset-card b svg { width: 15px; }
 .preset-counts { display: flex; flex-wrap: wrap; gap: 4px; margin: 12px 0; }
 .preset-counts span, .count-pill { border-radius: 999px; background: rgba(255,255,255,.8); padding: 5px 7px; color: #687287; font-size: 9px; font-weight: 900; }
-.recommended { position: absolute; right: -26px; top: 16px; width: 100px; rotate: 35deg; background: #ffc740; padding: 4px; color: #765000; text-align: center; font-size: 9px; font-weight: 900; }
+.recommended { position: absolute; z-index: 1; right: 14px; top: 14px; display: inline-flex; align-items: center; gap: 4px; border: 1px solid rgba(117,101,221,.18); border-radius: 999px; background: rgba(255,255,255,.9); padding: 6px 10px 6px 8px; color: #6755d9; font-size: 10px; font-weight: 900; line-height: 1; letter-spacing: .02em; box-shadow: 0 5px 14px rgba(88,71,175,.12); }
+.recommended::before { color: #f4b82f; content: "★"; font-size: 11px; line-height: 1; }
 .preset-coral { --preset-bg:#fff3ef;--preset-border:#ffdcd2;--preset-shadow:#ffd4c8;--preset-text:#dc644d; }
 .preset-green { --preset-bg:#edfaf5;--preset-border:#ccefe1;--preset-shadow:#c5eadb;--preset-text:#138268; }
 .preset-purple { --preset-bg:#f1eeff;--preset-border:#dcd5ff;--preset-shadow:#d4cdfa;--preset-text:#6755d9; }
