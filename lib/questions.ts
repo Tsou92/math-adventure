@@ -170,22 +170,22 @@ export function makeQuestionsForCounts(
     let answer: number;
 
     if (kind === 0) {
-      expression = `${Array.from({ length: groups }, () => groupSize).join(' + ')} 可以写成 ${groupSize} × 几`;
+      expression = `${Array.from({ length: groups }, () => groupSize).join(' + ')} 可以写成 ${groupSize} × □`;
       answer = groups;
     } else if (kind === 1) {
-      expression = `${groups} 个 ${groupSize} 相加，和是`;
+      expression = `${groups} 个 ${groupSize} 相加，和是 □`;
       answer = product;
     } else if (kind === 2) {
-      expression = `每组 ${groupSize} 个，有 ${groups} 组，一共有`;
+      expression = `每组 ${groupSize} 个，有 ${groups} 组，一共有 □ 个`;
       answer = product;
     } else if (kind === 3) {
-      expression = `把 ${groups} × ${groupSize} 交换两个乘数，得到 ${groupSize} × 几`;
+      expression = `把 ${groups} × ${groupSize} 交换两个乘数，得到 ${groupSize} × □`;
       answer = groups;
     } else if (kind === 4) {
-      expression = `${groups} × ${groupSize} = ${product}，一个乘数是 ${groups}，另一个乘数是`;
+      expression = `${groups} × ${groupSize} = ${product}，一个乘数是 ${groups}，另一个乘数是 □`;
       answer = groupSize;
     } else {
-      expression = `${groupSize} × ${groups} 可以看成几个 ${groupSize} 相加`;
+      expression = `${groupSize} × ${groups} 可以看成 □ 个 ${groupSize} 相加`;
       answer = groups;
     }
 

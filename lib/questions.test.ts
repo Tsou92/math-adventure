@@ -187,7 +187,7 @@ describe('makeQuestionsForCounts', () => {
       item.expression.includes('可以看成'),
     )) {
       const match = question.expression.match(
-        /(\d+) × (\d+) 可以看成几个 (\d+) 相加/,
+        /(\d+) × (\d+) 可以看成 □ 个 (\d+) 相加/,
       );
       expect(match).not.toBeNull();
       expect(Number(match?.[1])).toBe(Number(match?.[3]));
@@ -195,6 +195,8 @@ describe('makeQuestionsForCounts', () => {
     }
     for (const question of questions) {
       expect(question.level).toBe('multiplyMeaning');
+      expect(question.expression).toContain('□');
+      expect(question.expression).not.toContain('几');
       expect(question.answer).toBeGreaterThanOrEqual(2);
       expect(question.answer).toBeLessThanOrEqual(81);
     }

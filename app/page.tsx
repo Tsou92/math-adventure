@@ -185,6 +185,38 @@ function formatTimestamp(value: string | null) {
   }).format(new Date(value));
 }
 
+function expressionWithAnswerBlank(expression: string, level: Level) {
+  if (level !== 'multiplyMeaning' || expression.includes('□')) return expression;
+  if (expression.endsWith(' × 几')) return expression.replace(/几$/, '□');
+  if (expression.includes('可以看成几个 '))
+    return expression.replace('可以看成几个 ', '可以看成 □ 个 ');
+  if (expression.endsWith('和是')) return `${expression} □`;
+  if (expression.endsWith('一共有')) return `${expression} □ 个`;
+  if (expression.endsWith('另一个乘数是')) return `${expression} □`;
+  return expression;
+}
+
+function splitAnswerBlank(expression: string, level: Level) {
+  const normalized = expressionWithAnswerBlank(expression, level);
+  const blankIndex = normalized.indexOf('□');
+  if (blankIndex < 0) return null;
+  return {
+    before: normalized.slice(0, blankIndex),
+    after: normalized.slice(blankIndex + 1),
+  };
+}
+
+function formatAnsweredExpression(
+  expression: string,
+  answer: string | number,
+  level: Level,
+) {
+  const normalized = expressionWithAnswerBlank(expression, level);
+  return normalized.includes('□')
+    ? normalized.replace('□', String(answer))
+    : `${normalized} = ${answer}`;
+}
+
 function AppHeader({ user, onLogout }: { user: User; onLogout: () => void }) {
   return (
     <header className="relative z-10 border-b border-white/70 bg-white/75 backdrop-blur-xl">
@@ -1012,13 +1044,12 @@ function PracticeRound({
                 </div>
               </div>
               <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {questions.map((question) => (
-                  <label
-                    className={`question-card ${question.level === 'multiplyMeaning' ? 'question-card-concept' : ''}`}
-                    key={question.id}
-                  >
-                    <span className="question-number">{question.position}</span>
-                    <strong>{question.expression} =</strong>
+                {questions.map((question) => {
+                  const blank = splitAnswerBlank(
+                    question.expression,
+                    question.level,
+                  );
+                  const answerInput = (
                     <input
                       inputMode="numeric"
                       aria-label={`第 ${question.position} 题答案`}
@@ -1027,8 +1058,30 @@ function PracticeRound({
                         updateAnswer(question.id, e.target.value)
                       }
                     />
-                  </label>
-                ))}
+                  );
+                  return (
+                    <label
+                      className={`question-card ${blank ? 'question-card-concept' : ''}`}
+                      key={question.id}
+                    >
+                      <span className="question-number">
+                        {question.position}
+                      </span>
+                      {blank ? (
+                        <span className="inline-question-prompt">
+                          <strong>{blank.before}</strong>
+                          {answerInput}
+                          {blank.after && <strong>{blank.after}</strong>}
+                        </span>
+                      ) : (
+                        <>
+                          <strong>{question.expression} =</strong>
+                          {answerInput}
+                        </>
+                      )}
+                    </label>
+                  );
+                })}
               </div>
             </section>
           );
@@ -1107,7 +1160,7 @@ function ResultPanel({
             >
               <span>{q.position}</span>
               <strong>
-                {q.expression} = {q.answer}
+                {formatAnsweredExpression(q.expression, q.answer, q.level)}
               </strong>
               {q.isCorrect ? (
                 <Check />
@@ -1189,7 +1242,11 @@ function PracticeHistory({ records }: { records: RecordItem[] }) {
                     >
                       <span>{question.position}</span>
                       <strong>
-                        {question.expression} = {question.answer}
+                        {formatAnsweredExpression(
+                          question.expression,
+                          question.answer,
+                          question.level,
+                        )}
                       </strong>
                       {question.isCorrect ? (
                         <Check />
@@ -1281,6 +1338,21 @@ function WrongBookPractice({
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {wrong.map((item, index) => {
               const result = results[item.id];
+              const blank = splitAnswerBlank(item.expression, item.level);
+              const answerInput = (
+                <input
+                  className="min-w-0 flex-1 rounded-xl border-2 border-[#DFE3ED] bg-white px-3 py-2 text-center text-lg font-black outline-none transition focus:border-[#7565DD]"
+                  inputMode="numeric"
+                  aria-label={`${item.expression} 的答案`}
+                  value={answers[item.id] ?? ''}
+                  onChange={(event) =>
+                    updateAnswer(item.id, event.target.value)
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') checkAnswer(item);
+                  }}
+                />
+              );
               return (
                 <article
                   className={`rounded-2xl border-2 p-4 transition ${result === true ? 'border-[#8AD6A8] bg-[#F0FFF5]' : result === false ? 'border-[#FFAAA0] bg-[#FFF4F2]' : 'border-[#E8EAF2] bg-white'}`}
@@ -1292,23 +1364,20 @@ function WrongBookPractice({
                       曾错 {item.mistake_count} 次
                     </small>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <strong className="whitespace-nowrap font-title text-lg text-[#354158]">
-                      {item.expression} =
-                    </strong>
-                    <input
-                      className="min-w-0 flex-1 rounded-xl border-2 border-[#DFE3ED] bg-white px-3 py-2 text-center text-lg font-black outline-none transition focus:border-[#7565DD]"
-                      inputMode="numeric"
-                      aria-label={`${item.expression} 的答案`}
-                      value={answers[item.id] ?? ''}
-                      onChange={(event) =>
-                        updateAnswer(item.id, event.target.value)
-                      }
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') checkAnswer(item);
-                      }}
-                    />
-                  </div>
+                  {blank ? (
+                    <div className="inline-wrong-prompt">
+                      <strong>{blank.before}</strong>
+                      {answerInput}
+                      {blank.after && <strong>{blank.after}</strong>}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <strong className="whitespace-nowrap font-title text-lg text-[#354158]">
+                        {item.expression} =
+                      </strong>
+                      {answerInput}
+                    </div>
+                  )}
                   <button
                     className={`mt-3 flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-black transition ${result === true ? 'bg-[#36B66B] text-white' : 'bg-[#ECE9FF] text-[#6755D9] hover:bg-[#DFDAFF]'}`}
                     disabled={!answers[item.id]?.trim()}
@@ -1496,7 +1565,11 @@ function ChildDashboard({
                         <article className="wrong-card" key={item.id}>
                           <div className="flex items-center justify-between">
                             <strong>
-                              {item.expression} = {item.correct_answer}
+                              {formatAnsweredExpression(
+                                item.expression,
+                                item.correct_answer,
+                                item.level,
+                              )}
                             </strong>
                             <span>错 {item.mistake_count} 次</span>
                           </div>

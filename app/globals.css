@@ -626,14 +626,28 @@ a.mini-stat-card:hover {
   white-space: nowrap;
 }
 .question-card-concept {
-  grid-template-columns: 28px minmax(0, 1fr) 72px;
+  grid-template-columns: 28px minmax(0, 1fr);
 }
-.question-card-concept strong {
+.question-card-concept strong,
+.inline-question-prompt {
   font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.5;
   text-align: left;
   white-space: normal;
+}
+.inline-question-prompt {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  color: #374259;
+  font-weight: 800;
+}
+.question-card-concept .inline-question-prompt input {
+  width: 58px;
+  height: 40px;
+  flex: 0 0 58px;
 }
 .question-card input {
   width: 68px;
@@ -647,6 +661,22 @@ a.mini-stat-card:hover {
   font-weight: 900;
   text-align: center;
   outline: none;
+}
+
+.inline-wrong-prompt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: #354158;
+}
+.inline-wrong-prompt strong {
+  font-family: var(--font-title);
+  font-size: 16px;
+}
+.inline-wrong-prompt input {
+  width: 64px;
+  flex: 0 0 64px;
 }
 .question-card input:focus {
   border-color: #7565dd;
@@ -777,6 +807,9 @@ a.mini-stat-card:hover {
   }
   .question-card {
     grid-template-columns: 25px minmax(0, 1fr) 64px;
+  }
+  .question-card-concept {
+    grid-template-columns: 25px minmax(0, 1fr);
   }
   .question-card strong {
     font-size: 16px;
