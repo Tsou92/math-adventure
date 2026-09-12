@@ -17,6 +17,9 @@ describe('makeQuestionsForCounts', () => {
       challenger: 13,
       multiplyMeaning: 9,
       multiplyFacts: 8,
+      abacusMove: 0,
+      abacusMatch: 0,
+      abacusCalculation: 0,
     });
     expect(questions).toHaveLength(48);
     expect(
@@ -54,6 +57,9 @@ describe('makeQuestionsForCounts', () => {
         challenger: 0,
         multiplyMeaning: 0,
         multiplyFacts: 0,
+        abacusMove: 0,
+        abacusMatch: 0,
+        abacusCalculation: 0,
       });
       expect(questions).toHaveLength(100);
       expect(
@@ -76,6 +82,9 @@ describe('makeQuestionsForCounts', () => {
         challenger: 0,
         multiplyMeaning: 0,
         multiplyFacts: 0,
+        abacusMove: 0,
+        abacusMatch: 0,
+        abacusCalculation: 0,
       });
       for (const level of ['starter', 'explorer'] as const) {
         const levelQuestions = questions.filter(
@@ -105,6 +114,9 @@ describe('makeQuestionsForCounts', () => {
         challenger: 0,
         multiplyMeaning: 0,
         multiplyFacts: 0,
+        abacusMove: 0,
+        abacusMatch: 0,
+        abacusCalculation: 0,
       });
       const count = questions.filter((question) =>
         question.expression.split(' ').includes('0'),
@@ -123,6 +135,9 @@ describe('makeQuestionsForCounts', () => {
       challenger: 50,
       multiplyMeaning: 0,
       multiplyFacts: 0,
+      abacusMove: 0,
+      abacusMatch: 0,
+      abacusCalculation: 0,
     });
     expect(questions).toHaveLength(50);
     for (const question of questions) {
@@ -146,6 +161,9 @@ describe('makeQuestionsForCounts', () => {
         challenger: 50,
         multiplyMeaning: 0,
         multiplyFacts: 0,
+        abacusMove: 0,
+        abacusMatch: 0,
+        abacusCalculation: 0,
       },
       { challengerChain: true },
     );
@@ -164,6 +182,9 @@ describe('makeQuestionsForCounts', () => {
       challenger: 0,
       multiplyMeaning: 50,
       multiplyFacts: 0,
+      abacusMove: 0,
+      abacusMatch: 0,
+      abacusCalculation: 0,
     });
     expect(questions).toHaveLength(50);
     expect(new Set(questions.map((question) => question.expression)).size).toBe(
@@ -209,6 +230,9 @@ describe('makeQuestionsForCounts', () => {
       challenger: 0,
       multiplyMeaning: 0,
       multiplyFacts: 50,
+      abacusMove: 0,
+      abacusMatch: 0,
+      abacusCalculation: 0,
     });
     expect(questions).toHaveLength(50);
     expect(new Set(questions.map((question) => question.expression)).size).toBe(
@@ -221,6 +245,130 @@ describe('makeQuestionsForCounts', () => {
       expect(right).toBeGreaterThanOrEqual(2);
       expect(right).toBeLessThanOrEqual(9);
       expect(question.answer).toBe(left * right);
+    }
+  });
+
+  it('空拨画珠按跨5、跨十和普通变化生成', () => {
+    const questions = makeQuestionsForCounts(20260911, {
+      starter: 0,
+      explorer: 0,
+      challenger: 0,
+      multiplyMeaning: 0,
+      multiplyFacts: 0,
+      abacusMove: 50,
+      abacusMatch: 0,
+      abacusCalculation: 0,
+    });
+    expect(questions).toHaveLength(50);
+    const kinds = { crossFive: 0, crossTen: 0, regular: 0 };
+    for (const question of questions) {
+      expect(question.level).toBe('abacusMove');
+      expect(question.answer).toBeGreaterThanOrEqual(0);
+      expect(question.answer).toBeLessThanOrEqual(99);
+      const prompt = question.promptData;
+      expect(prompt).toMatchObject({ version: 1 });
+      if (!prompt || !('startValue' in prompt) || !('operand' in prompt))
+        throw new Error('invalid abacus move prompt');
+      const expected =
+        prompt.operator === '+'
+          ? prompt.startValue + prompt.operand
+          : prompt.startValue - prompt.operand;
+      expect(question.answer).toBe(expected);
+      const startDigit = prompt.startValue % 10;
+      const answerDigit = question.answer % 10;
+      if (
+        (question.answer > prompt.startValue && answerDigit < startDigit) ||
+        (question.answer < prompt.startValue && answerDigit > startDigit)
+      )
+        kinds.crossTen += 1;
+      else if (
+        (startDigit < 5 && answerDigit >= 5) ||
+        (startDigit >= 5 && answerDigit < 5)
+      )
+        kinds.crossFive += 1;
+      else kinds.regular += 1;
+    }
+    expect(kinds).toEqual({ crossFive: 20, crossTen: 20, regular: 10 });
+  });
+
+  it('空拨连线每组有2至4道且答案互不重复', () => {
+    for (const count of [2, 3, 4, 5, 9, 50]) {
+      const questions = makeQuestionsForCounts(4000 + count, {
+        starter: 0,
+        explorer: 0,
+        challenger: 0,
+        multiplyMeaning: 0,
+        multiplyFacts: 0,
+        abacusMove: 0,
+        abacusMatch: count,
+        abacusCalculation: 0,
+      });
+      expect(questions).toHaveLength(count);
+      const groups = Object.groupBy(questions, (question) => {
+        const prompt = question.promptData;
+        if (!prompt || !('groupId' in prompt)) throw new Error('invalid group');
+        return prompt.groupId;
+      });
+      for (const group of Object.values(groups)) {
+        expect(group).toBeDefined();
+        expect(group!.length).toBeGreaterThanOrEqual(2);
+        expect(group!.length).toBeLessThanOrEqual(4);
+        expect(new Set(group!.map((question) => question.answer)).size).toBe(
+          group!.length,
+        );
+        const first = group![0].promptData;
+        if (!first || !('optionValues' in first))
+          throw new Error('invalid options');
+        expect(new Set(first.optionValues)).toEqual(
+          new Set(group!.map((question) => question.answer)),
+        );
+      }
+    }
+  });
+
+  it('空拨连线不允许只生成 1 道', () => {
+    expect(() =>
+      makeQuestionsForCounts(4001, {
+        starter: 0,
+        explorer: 0,
+        challenger: 0,
+        multiplyMeaning: 0,
+        multiplyFacts: 0,
+        abacusMove: 0,
+        abacusMatch: 1,
+        abacusCalculation: 0,
+      }),
+    ).toThrow('空拨连线至少需要 2 道题');
+  });
+
+  it('实拨计算固定三项且每一步都在0至99', () => {
+    const questions = makeQuestionsForCounts(8888, {
+      starter: 0,
+      explorer: 0,
+      challenger: 0,
+      multiplyMeaning: 0,
+      multiplyFacts: 0,
+      abacusMove: 0,
+      abacusMatch: 0,
+      abacusCalculation: 50,
+    });
+    expect(questions).toHaveLength(50);
+    for (const question of questions) {
+      const prompt = question.promptData;
+      if (!prompt || !('operations' in prompt))
+        throw new Error('invalid calculation prompt');
+      expect(prompt.operations).toHaveLength(2);
+      let value = prompt.startValue;
+      for (const operation of prompt.operations) {
+        expect(operation.value).toBeGreaterThan(0);
+        value =
+          operation.operator === '+'
+            ? value + operation.value
+            : value - operation.value;
+        expect(value).toBeGreaterThanOrEqual(0);
+        expect(value).toBeLessThanOrEqual(99);
+      }
+      expect(question.answer).toBe(value);
     }
   });
 });

@@ -11,4 +11,7 @@ ALTER TABLE kousuan.round_questions
 
 ALTER TABLE kousuan.round_questions
   ADD CONSTRAINT round_questions_level_check
-  CHECK (level IN ('starter', 'explorer', 'challenger', 'multiplyMeaning', 'multiplyFacts'));
+  CHECK (level IN (
+    'starter', 'explorer', 'challenger', 'multiplyMeaning', 'multiplyFacts',
+    'abacusMove', 'abacusMatch', 'abacusCalculation'
+  ));

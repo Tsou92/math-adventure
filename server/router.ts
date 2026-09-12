@@ -37,7 +37,30 @@ type AnswerRow = Row & {
   correct_answer: number;
   level: string;
   answer_text: string | null;
+  prompt_data: unknown;
 };
+
+function promptData(value: unknown) {
+  if (!value) return {};
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value) as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  }
+  return value as Record<string, unknown>;
+}
+
+function questionKey(level: string, expression: string, answer: number) {
+  const normalized = expression
+    .normalize('NFKC')
+    .replaceAll('-', '−')
+    .replace(/\s/g, '');
+  return createHash('sha256')
+    .update(['2', level, normalized, String(answer)].join('\u001f'))
+    .digest('hex');
+}
 
 export async function fetchChildrenSummary(familyId: string) {
   return db()`SELECT u.id, u.username, u.display_name, u.is_active, u.must_change_password, u.created_at,
@@ -56,7 +79,11 @@ const countSchema = z
     challenger: z.number().int().min(0).max(50),
     multiplyMeaning: z.number().int().min(0).max(50),
     multiplyFacts: z.number().int().min(0).max(50),
+    abacusMove: z.number().int().min(0).max(50),
+    abacusMatch: z.number().int().min(0).max(50),
+    abacusCalculation: z.number().int().min(0).max(50),
   })
+  .refine((counts) => counts.abacusMatch !== 1, '空拨连线至少选择 2 道')
   .refine(
     (counts) => totalQuestions(counts) >= 1 && totalQuestions(counts) <= 100,
     '总题数需为 1–100 道',
@@ -331,6 +358,9 @@ function serializeRound(round: Row, questions: Row[]) {
       challenger: round.challenger_count,
       multiplyMeaning: round.multiply_meaning_count,
       multiplyFacts: round.multiply_facts_count,
+      abacusMove: round.abacus_move_count,
+      abacusMatch: round.abacus_match_count,
+      abacusCalculation: round.abacus_calculation_count,
     },
     totalCount: round.total_count,
     startedAt: round.started_at,
@@ -342,6 +372,8 @@ function serializeRound(round: Row, questions: Row[]) {
       level: question.level,
       expression: question.expression,
       answer: question.answer_text ?? '',
+      clientVersion: Number(question.client_version ?? 0),
+      promptData: promptData(question.prompt_data),
       isCorrect: question.is_correct,
       correctAnswer:
         round.status === 'completed' ? question.correct_answer : undefined,
@@ -356,8 +388,8 @@ async function fetchRound(userId: string, roundId: string) {
   if (!rounds[0])
     throw Object.assign(new Error('练习不存在'), { statusCode: 404 });
   const questions =
-    (await sql`SELECT q.id, q.position, q.level, q.expression, q.correct_answer,
-      a.answer_text, a.is_correct FROM kousuan.round_questions q
+    (await sql`SELECT q.id, q.position, q.level, q.expression, q.correct_answer, q.prompt_data,
+      a.answer_text, a.is_correct, a.client_version FROM kousuan.round_questions q
       LEFT JOIN kousuan.practice_answers a ON a.question_id = q.id
       WHERE q.round_id = ${roundId} ORDER BY q.position`) as Row[];
   return serializeRound(rounds[0], questions);
@@ -396,14 +428,14 @@ async function createRound(req: VercelRequest, res: VercelResponse) {
   const seed = randomInt(1, 2_000_000_000);
   const generated = makeQuestionsForCounts(seed, counts, { challengerChain });
   const statements = [
-    sql`INSERT INTO kousuan.practice_rounds (id, user_id, family_id, idempotency_key, source, package_name, starter_count, explorer_count, challenger_count, multiply_meaning_count, multiply_facts_count, total_count, seed)
-      VALUES (${roundId}, ${user.id}, ${user.family_id}, ${input.idempotencyKey}, ${input.source}, ${packageName}, ${counts.starter}, ${counts.explorer}, ${counts.challenger}, ${counts.multiplyMeaning}, ${counts.multiplyFacts}, ${generated.length}, ${seed})`,
+    sql`INSERT INTO kousuan.practice_rounds (id, user_id, family_id, idempotency_key, source, package_name, starter_count, explorer_count, challenger_count, multiply_meaning_count, multiply_facts_count, abacus_move_count, abacus_match_count, abacus_calculation_count, total_count, seed)
+      VALUES (${roundId}, ${user.id}, ${user.family_id}, ${input.idempotencyKey}, ${input.source}, ${packageName}, ${counts.starter}, ${counts.explorer}, ${counts.challenger}, ${counts.multiplyMeaning}, ${counts.multiplyFacts}, ${counts.abacusMove}, ${counts.abacusMatch}, ${counts.abacusCalculation}, ${generated.length}, ${seed})`,
     ...generated.map(
       (
         question,
         index,
-      ) => sql`INSERT INTO kousuan.round_questions (round_id, position, level, expression, correct_answer)
-      VALUES (${roundId}, ${index + 1}, ${question.level}, ${question.expression}, ${question.answer})`,
+      ) => sql`INSERT INTO kousuan.round_questions (round_id, position, level, expression, correct_answer, prompt_data)
+      VALUES (${roundId}, ${index + 1}, ${question.level}, ${question.expression}, ${question.answer}, ${JSON.stringify(question.promptData ?? {})}::jsonb)`,
     ),
   ];
   await sql.transaction(statements);
@@ -446,6 +478,7 @@ async function roundAction(
             z.object({
               questionId: z.uuid(),
               answer: z.string().regex(/^-?\d{0,4}$/),
+              clientVersion: z.number().int().min(1),
             }),
           )
           .max(100),
@@ -460,22 +493,54 @@ async function roundAction(
     const allowedIds = new Set(allowed.map((row) => String(row.id)));
     if (parsed.answers.some((answer) => !allowedIds.has(answer.questionId)))
       throw Object.assign(new Error('答案中包含无效题目'), { statusCode: 400 });
-    if (parsed.answers.length)
-      await sql.transaction(
-        parsed.answers.map(
-          (
-            answer,
-          ) => sql`INSERT INTO kousuan.practice_answers (question_id, round_id, answer_text, updated_at)
-      VALUES (${answer.questionId}, ${roundId}, ${answer.answer}, now())
-      ON CONFLICT (question_id) DO UPDATE SET answer_text = excluded.answer_text, updated_at = now()`,
-        ),
-      );
-    return send(res, 200, { ok: true });
+    const saved: Array<{
+      questionId: string;
+      answerText: string;
+      clientVersion: number;
+    }> = [];
+    for (const answer of parsed.answers) {
+      const rows =
+        (await sql`INSERT INTO kousuan.practice_answers (question_id, round_id, answer_text, client_version, updated_at)
+        VALUES (${answer.questionId}, ${roundId}, ${answer.answer}, ${answer.clientVersion}, now())
+        ON CONFLICT (question_id) DO UPDATE SET
+          answer_text = excluded.answer_text,
+          client_version = excluded.client_version,
+          updated_at = now()
+        WHERE kousuan.practice_answers.client_version < excluded.client_version
+          OR (kousuan.practice_answers.client_version = excluded.client_version
+            AND kousuan.practice_answers.answer_text = excluded.answer_text)
+        RETURNING answer_text, client_version`) as Row[];
+      if (!rows[0]) {
+        const current =
+          (await sql`SELECT answer_text, client_version FROM kousuan.practice_answers WHERE question_id = ${answer.questionId}`) as Row[];
+        throw Object.assign(
+          new Error('答案已在另一页面或设备更新，请确认后再试'),
+          {
+            statusCode: 409,
+            details: {
+              code: 'ANSWER_VERSION_STALE',
+              questionId: answer.questionId,
+              answerText:
+                typeof current[0]?.answer_text === 'string'
+                  ? current[0].answer_text
+                  : '',
+              clientVersion: Number(current[0]?.client_version ?? 0),
+            },
+          },
+        );
+      }
+      saved.push({
+        questionId: answer.questionId,
+        answerText: String(rows[0].answer_text),
+        clientVersion: Number(rows[0].client_version),
+      });
+    }
+    return send(res, 200, { ok: true, saved });
   }
   if (action === 'submit') {
     method(req, 'POST');
     const rows =
-      (await sql`SELECT q.id, q.expression, q.correct_answer, q.level, a.answer_text
+      (await sql`SELECT q.id, q.expression, q.correct_answer, q.level, q.prompt_data, a.answer_text
       FROM kousuan.round_questions q LEFT JOIN kousuan.practice_answers a ON a.question_id = q.id
       JOIN kousuan.practice_rounds r ON r.id = q.round_id
       WHERE q.round_id = ${roundId} AND r.user_id = ${user.id} AND r.status = 'started'
@@ -502,9 +567,14 @@ async function roundAction(
     for (const row of rows.filter(
       (item) => Number(item.answer_text) !== Number(item.correct_answer),
     )) {
-      statements.push(sql`INSERT INTO kousuan.wrong_question_stats (user_id, expression, correct_answer, level, last_answer)
-        VALUES (${user.id}, ${String(row.expression)}, ${Number(row.correct_answer)}, ${String(row.level)}, ${String(row.answer_text)})
-        ON CONFLICT (user_id, expression, correct_answer) DO UPDATE SET mistake_count = kousuan.wrong_question_stats.mistake_count + 1, last_answer = excluded.last_answer, last_seen_at = now()`);
+      const key = questionKey(
+        String(row.level),
+        String(row.expression),
+        Number(row.correct_answer),
+      );
+      statements.push(sql`INSERT INTO kousuan.wrong_question_stats (user_id, expression, correct_answer, level, last_answer, prompt_data, question_key)
+        VALUES (${user.id}, ${String(row.expression)}, ${Number(row.correct_answer)}, ${String(row.level)}, ${String(row.answer_text)}, ${JSON.stringify(promptData(row.prompt_data))}::jsonb, ${key})
+        ON CONFLICT (user_id, question_key) DO UPDATE SET mistake_count = kousuan.wrong_question_stats.mistake_count + 1, last_answer = excluded.last_answer, level = excluded.level, prompt_data = excluded.prompt_data, last_seen_at = now()`);
     }
     statements.push(sql`UPDATE kousuan.practice_rounds SET status = 'completed', score = ${score}, correct_count = ${correct.length}, completed_at = now(), duration_seconds = greatest(0, extract(epoch from (now() - started_at))::int)
       WHERE id = ${roundId} AND user_id = ${user.id} AND status = 'started'`);
@@ -544,6 +614,9 @@ async function roundAction(
       challenger: Number(source[0].challenger_count),
       multiplyMeaning: Number(source[0].multiply_meaning_count),
       multiplyFacts: Number(source[0].multiply_facts_count),
+      abacusMove: Number(source[0].abacus_move_count),
+      abacusMatch: Number(source[0].abacus_match_count),
+      abacusCalculation: Number(source[0].abacus_calculation_count),
     };
     const sourceQuestions =
       (await sql`SELECT expression FROM kousuan.round_questions WHERE round_id = ${roundId} AND level = 'challenger'`) as Row[];
@@ -555,11 +628,11 @@ async function roundAction(
     const seed = randomInt(1, 2_000_000_000);
     const generated = makeQuestionsForCounts(seed, counts, { challengerChain });
     await sql.transaction([
-      sql`INSERT INTO kousuan.practice_rounds (id, user_id, family_id, idempotency_key, source, package_name, starter_count, explorer_count, challenger_count, multiply_meaning_count, multiply_facts_count, total_count, seed)
-        VALUES (${newId}, ${user.id}, ${user.family_id}, ${parsed.idempotencyKey}, 'repeat', ${`${String(source[0].package_name)}·再练一次`}, ${counts.starter}, ${counts.explorer}, ${counts.challenger}, ${counts.multiplyMeaning}, ${counts.multiplyFacts}, ${generated.length}, ${seed})`,
+      sql`INSERT INTO kousuan.practice_rounds (id, user_id, family_id, idempotency_key, source, package_name, starter_count, explorer_count, challenger_count, multiply_meaning_count, multiply_facts_count, abacus_move_count, abacus_match_count, abacus_calculation_count, total_count, seed)
+        VALUES (${newId}, ${user.id}, ${user.family_id}, ${parsed.idempotencyKey}, 'repeat', ${`${String(source[0].package_name)}·再练一次`}, ${counts.starter}, ${counts.explorer}, ${counts.challenger}, ${counts.multiplyMeaning}, ${counts.multiplyFacts}, ${counts.abacusMove}, ${counts.abacusMatch}, ${counts.abacusCalculation}, ${generated.length}, ${seed})`,
       ...generated.map(
         (question, index) =>
-          sql`INSERT INTO kousuan.round_questions (round_id, position, level, expression, correct_answer) VALUES (${newId}, ${index + 1}, ${question.level}, ${question.expression}, ${question.answer})`,
+          sql`INSERT INTO kousuan.round_questions (round_id, position, level, expression, correct_answer, prompt_data) VALUES (${newId}, ${index + 1}, ${question.level}, ${question.expression}, ${question.answer}, ${JSON.stringify(question.promptData ?? {})}::jsonb)`,
       ),
     ]);
     return send(res, 201, { round: await fetchRound(user.id, newId) });
@@ -572,7 +645,8 @@ async function records(req: VercelRequest, res: VercelResponse) {
   const user = await requireUser(req, ['child']);
   const rows = await db()`WITH recent AS (
       SELECT id, package_name, starter_count, explorer_count, challenger_count,
-        multiply_meaning_count, multiply_facts_count, total_count,
+        multiply_meaning_count, multiply_facts_count, abacus_move_count,
+        abacus_match_count, abacus_calculation_count, total_count,
         score, correct_count, duration_seconds, started_at, completed_at
       FROM kousuan.practice_rounds
       WHERE user_id = ${user.id} AND status = 'completed'
@@ -585,7 +659,9 @@ async function records(req: VercelRequest, res: VercelResponse) {
         'position', q.position,
         'level', q.level,
         'expression', q.expression,
+        'promptData', q.prompt_data,
         'answer', a.answer_text,
+        'clientVersion', a.client_version,
         'isCorrect', a.is_correct,
         'correctAnswer', q.correct_answer
       ) ORDER BY q.position) FILTER (WHERE q.id IS NOT NULL), '[]'::json) AS questions
@@ -594,6 +670,7 @@ async function records(req: VercelRequest, res: VercelResponse) {
     LEFT JOIN kousuan.practice_answers a ON a.question_id = q.id
     GROUP BY recent.id, recent.package_name, recent.starter_count, recent.explorer_count,
       recent.challenger_count, recent.multiply_meaning_count, recent.multiply_facts_count,
+      recent.abacus_move_count, recent.abacus_match_count, recent.abacus_calculation_count,
       recent.total_count, recent.score, recent.correct_count,
       recent.duration_seconds, recent.started_at, recent.completed_at
     ORDER BY recent.completed_at DESC`;
@@ -604,7 +681,7 @@ async function wrongBook(req: VercelRequest, res: VercelResponse) {
   method(req, 'GET');
   const user = await requireUser(req, ['child']);
   const rows =
-    await db()`SELECT id, expression, correct_answer, level, mistake_count, last_answer, last_seen_at
+    await db()`SELECT id, expression, correct_answer, level, mistake_count, last_answer, last_seen_at, prompt_data
     FROM kousuan.wrong_question_stats WHERE user_id = ${user.id} ORDER BY last_seen_at DESC LIMIT 200`;
   return send(res, 200, { wrongQuestions: rows });
 }
@@ -652,6 +729,10 @@ export async function handleApi(req: VercelRequest, res: VercelResponse) {
         ? 400
         : Number((error as { statusCode?: number })?.statusCode ?? 500);
     if (status >= 500) console.error(error);
-    return send(res, status, { error: issue });
+    return send(res, status, {
+      error: issue,
+      ...(((error as { details?: Record<string, unknown> })?.details ??
+        {}) as Record<string, unknown>),
+    });
   }
 }

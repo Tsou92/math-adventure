@@ -1,6 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import {
   BookOpen,
   Check,
@@ -30,6 +36,13 @@ import {
   type Level,
   type QuestionCounts,
 } from '@/lib/questions';
+import type {
+  AbacusCalculationPrompt,
+  AbacusMatchPrompt,
+  AbacusMovePrompt,
+  QuestionPrompt,
+} from '@/lib/questions';
+import { Abacus } from '@/components/Abacus';
 
 type User = {
   id: string;
@@ -44,6 +57,8 @@ type RoundQuestion = {
   level: Level;
   expression: string;
   answer: string;
+  clientVersion: number;
+  promptData?: QuestionPrompt;
   isCorrect?: boolean;
   correctAnswer?: number;
 };
@@ -67,6 +82,9 @@ type RecordItem = {
   challenger_count: number;
   multiply_meaning_count: number;
   multiply_facts_count: number;
+  abacus_move_count: number;
+  abacus_match_count: number;
+  abacus_calculation_count: number;
   total_count: number;
   score: number;
   correct_count: number;
@@ -83,6 +101,7 @@ type WrongItem = {
   mistake_count: number;
   last_answer: string;
   last_seen_at: string;
+  prompt_data?: QuestionPrompt;
 };
 type ChildItem = {
   id: string;
@@ -136,6 +155,21 @@ const levelInfo: Record<
     subtitle: '2～9 的乘法计算',
     tone: 'blue',
   },
+  abacusMove: {
+    title: '珠心算·空拨画珠',
+    subtitle: '看起始珠形，拨出计算结果',
+    tone: 'amber',
+  },
+  abacusMatch: {
+    title: '珠心算·空拨连线',
+    subtitle: '把算式和正确珠形配成一对',
+    tone: 'rose',
+  },
+  abacusCalculation: {
+    title: '珠心算·实拨计算',
+    subtitle: '三项连续加减心算练习',
+    tone: 'teal',
+  },
 };
 
 const emptyCounts: QuestionCounts = {
@@ -144,6 +178,9 @@ const emptyCounts: QuestionCounts = {
   challenger: 0,
   multiplyMeaning: 0,
   multiplyFacts: 0,
+  abacusMove: 0,
+  abacusMatch: 0,
+  abacusCalculation: 0,
 };
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
@@ -154,7 +191,11 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const data = (await response.json().catch(() => ({}))) as T & {
     error?: string;
   };
-  if (!response.ok) throw new Error(data.error ?? '网络开小差了，请再试一次');
+  if (!response.ok)
+    throw Object.assign(new Error(data.error ?? '网络开小差了，请再试一次'), {
+      status: response.status,
+      data,
+    });
   return data as T;
 }
 
@@ -186,7 +227,8 @@ function formatTimestamp(value: string | null) {
 }
 
 function expressionWithAnswerBlank(expression: string, level: Level) {
-  if (level !== 'multiplyMeaning' || expression.includes('□')) return expression;
+  if (level !== 'multiplyMeaning' || expression.includes('□'))
+    return expression;
   if (expression.endsWith(' × 几')) return expression.replace(/几$/, '□');
   if (expression.includes('可以看成几个 '))
     return expression.replace('可以看成几个 ', '可以看成 □ 个 ');
@@ -751,6 +793,7 @@ function QuestionPicker({
   }));
   const [challengerChain, setChallengerChain] = useState(false);
   const total = totalQuestions(counts);
+  const invalidMatchCount = counts.abacusMatch === 1;
   const changeCount = (level: Level, delta: number) => {
     setCounts((current) => ({
       ...current,
@@ -856,7 +899,7 @@ function QuestionPicker({
       )}
       <button
         className="primary-button mt-6 w-full sm:w-auto"
-        disabled={busy || total < 1 || total > 100}
+        disabled={busy || total < 1 || total > 100 || invalidMatchCount}
         onClick={() => onCreate({ source: 'custom', counts, challengerChain })}
       >
         <Rocket />
@@ -865,7 +908,261 @@ function QuestionPicker({
       {total > 100 && (
         <p className="notice-error mt-4">本轮最多 100 道，请减少一些题目。</p>
       )}
+      {invalidMatchCount && (
+        <p className="notice-error mt-4">
+          空拨连线至少选择 2 道，才能完成配对。
+        </p>
+      )}
     </section>
+  );
+}
+
+const pairColors = ['#7565DD', '#E07186', '#16917F', '#D88A18'];
+
+function AbacusMoveQuestion({
+  question,
+  answer,
+  onAnswer,
+}: {
+  question: RoundQuestion;
+  answer: string;
+  onAnswer: (id: string, value: string) => void;
+}) {
+  const prompt = question.promptData as AbacusMovePrompt;
+  const currentValue = answer === '' ? 0 : Number(answer);
+  return (
+    <article className="abacus-move-card">
+      <div className="flex items-center justify-between">
+        <span className="question-number">{question.position}</span>
+        <small className="font-bold text-[#9A8263]">拨出最后的结果</small>
+      </div>
+      <div className="abacus-move-stage">
+        <Abacus value={prompt.startValue} label="起始算盘" />
+        <span className="abacus-operation">
+          {prompt.operator}
+          {prompt.operand}
+        </span>
+        <div className="grid justify-items-center gap-2">
+          <Abacus
+            value={currentValue}
+            interactive
+            showValue
+            label={`第 ${question.position} 题作答算盘`}
+            onChange={(value) => onAnswer(question.id, String(value))}
+          />
+          {answer === '' && (
+            <button
+              className="abacus-zero-button"
+              type="button"
+              onClick={() => onAnswer(question.id, '0')}
+            >
+              确认答案是 0
+            </button>
+          )}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function AbacusMatchBoard({
+  questions,
+  answers,
+  onAnswer,
+}: {
+  questions: RoundQuestion[];
+  answers: Record<string, string>;
+  onAnswer: (id: string, value: string) => void;
+}) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [lines, setLines] = useState<
+    Array<{
+      id: string;
+      x1: number;
+      y1: number;
+      x2: number;
+      y2: number;
+      color: string;
+    }>
+  >([]);
+  const columnsRef = useRef<HTMLDivElement | null>(null);
+  const expressionRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const optionRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const prompt = questions[0]?.promptData as AbacusMatchPrompt | undefined;
+  const optionValues = prompt?.optionValues ?? [];
+  const selected = questions.find((question) => question.id === selectedId);
+  useEffect(() => {
+    const drawLines = () => {
+      const columns = columnsRef.current;
+      if (!columns) return;
+      const containerRect = columns.getBoundingClientRect();
+      const nextLines = questions.flatMap((question, index) => {
+        const value = answers[question.id];
+        const from = expressionRefs.current[question.id];
+        const to = optionRefs.current[value];
+        if (!value || !from || !to) return [];
+        const fromRect = from.getBoundingClientRect();
+        const toRect = to.getBoundingClientRect();
+        return [
+          {
+            id: question.id,
+            x1: fromRect.right - containerRect.left,
+            y1: fromRect.top + fromRect.height / 2 - containerRect.top,
+            x2: toRect.left - containerRect.left,
+            y2: toRect.top + toRect.height / 2 - containerRect.top,
+            color: pairColors[index],
+          },
+        ];
+      });
+      setLines(nextLines);
+    };
+    const frame = window.requestAnimationFrame(drawLines);
+    const observer = new ResizeObserver(drawLines);
+    if (columnsRef.current) observer.observe(columnsRef.current);
+    window.addEventListener('resize', drawLines);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener('resize', drawLines);
+    };
+  }, [answers, questions]);
+  const assign = (value: number) => {
+    if (!selected) {
+      const occupied = questions.find(
+        (question) => answers[question.id] === String(value),
+      );
+      if (occupied) setSelectedId(occupied.id);
+      return;
+    }
+    if (answers[selected.id] === String(value)) {
+      onAnswer(selected.id, '');
+      setSelectedId(null);
+      return;
+    }
+    const occupied = questions.find(
+      (question) =>
+        question.id !== selected.id && answers[question.id] === String(value),
+    );
+    if (occupied) onAnswer(occupied.id, '');
+    onAnswer(selected.id, String(value));
+    setSelectedId(null);
+  };
+  return (
+    <article className="abacus-match-board">
+      <div className="flex items-center justify-between gap-3">
+        <strong className="font-title text-base text-[#704457]">
+          先点算式，再点正确的算盘
+        </strong>
+        <small className="font-bold text-[#A08390]">
+          {questions.filter((question) => answers[question.id] !== '').length}/
+          {questions.length} 已连线
+        </small>
+      </div>
+      <div className="abacus-match-columns" ref={columnsRef}>
+        <svg className="abacus-match-lines" aria-hidden="true">
+          {lines.map((line) => (
+            <line
+              key={line.id}
+              x1={line.x1}
+              y1={line.y1}
+              x2={line.x2}
+              y2={line.y2}
+              stroke={line.color}
+              strokeWidth="5"
+              strokeLinecap="round"
+            />
+          ))}
+        </svg>
+        <div className="abacus-match-list">
+          {questions.map((question, index) => {
+            const paired = answers[question.id] !== '';
+            return (
+              <button
+                className={`abacus-match-expression ${selectedId === question.id ? 'selected' : ''} ${paired ? 'paired' : ''}`}
+                style={
+                  paired
+                    ? ({ '--pair-color': pairColors[index] } as CSSProperties)
+                    : undefined
+                }
+                type="button"
+                key={question.id}
+                ref={(node) => {
+                  expressionRefs.current[question.id] = node;
+                }}
+                onClick={() =>
+                  setSelectedId(selectedId === question.id ? null : question.id)
+                }
+              >
+                <span className="mr-2 text-xs opacity-55">
+                  {question.position}
+                </span>
+                {question.expression}
+              </button>
+            );
+          })}
+        </div>
+        <div className="abacus-match-list">
+          {optionValues.map((value) => {
+            const ownerIndex = questions.findIndex(
+              (question) => answers[question.id] === String(value),
+            );
+            return (
+              <button
+                className={`abacus-match-option ${ownerIndex >= 0 ? 'paired' : ''}`}
+                style={
+                  ownerIndex >= 0
+                    ? ({
+                        '--pair-color': pairColors[ownerIndex],
+                      } as CSSProperties)
+                    : undefined
+                }
+                type="button"
+                key={value}
+                ref={(node) => {
+                  optionRefs.current[String(value)] = node;
+                }}
+                aria-label={`选择这个算盘珠形${ownerIndex >= 0 ? '，已经配对' : ''}`}
+                onClick={() => assign(value)}
+              >
+                <Abacus value={value} compact label="候选算盘" />
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function AbacusCalculationQuestion({
+  question,
+  answer,
+  onAnswer,
+}: {
+  question: RoundQuestion;
+  answer: string;
+  onAnswer: (id: string, value: string) => void;
+}) {
+  const prompt = question.promptData as AbacusCalculationPrompt;
+  return (
+    <label className="abacus-calculation-card">
+      <span className="question-number">{question.position}</span>
+      <span className="abacus-calculation-stack">
+        <span>{prompt.startValue}</span>
+        {prompt.operations.map((operation, index) => (
+          <span key={`${operation.operator}-${operation.value}-${index}`}>
+            {operation.operator} {operation.value}
+          </span>
+        ))}
+        <span>＝</span>
+      </span>
+      <input
+        inputMode="numeric"
+        aria-label={`第 ${question.position} 题答案`}
+        value={answer}
+        onChange={(event) => onAnswer(question.id, event.target.value)}
+      />
+    </label>
   );
 }
 
@@ -883,9 +1180,20 @@ function PracticeRound({
   const [answers, setAnswers] = useState<Record<string, string>>(() =>
     Object.fromEntries(round.questions.map((q) => [q.id, q.answer ?? ''])),
   );
+  const [versions, setVersions] = useState<Record<string, number>>(() =>
+    Object.fromEntries(
+      round.questions.map((q) => [q.id, q.clientVersion ?? 0]),
+    ),
+  );
+  const answersRef = useRef(answers);
+  const versionsRef = useRef(versions);
+  const dirtyIdsRef = useRef(new Set<string>());
   const [elapsed, setElapsed] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [saveState, setSaveState] = useState<
+    'idle' | 'dirty' | 'saving' | 'saved' | 'error'
+  >('idle');
   const saveTimer = useRef<number | null>(null);
   useEffect(() => {
     if (round.status !== 'started' || !round.startedAt) return;
@@ -902,28 +1210,131 @@ function PracticeRound({
     const timer = window.setInterval(tick, 500);
     return () => clearInterval(timer);
   }, [round.status, round.startedAt]);
+  useEffect(() => {
+    if (!['dirty', 'saving', 'error'].includes(saveState)) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener('beforeunload', warnBeforeLeaving);
+    return () => window.removeEventListener('beforeunload', warnBeforeLeaving);
+  }, [saveState]);
   const save = useCallback(
-    async (next: Record<string, string>) => {
-      const list = Object.entries(next).map(([questionId, answer]) => ({
-        questionId,
-        answer,
-      }));
-      if (list.length)
-        await api(`rounds/${round.id}/answers`, {
+    async (
+      next: Record<string, string>,
+      nextVersions: Record<string, number>,
+    ) => {
+      const list = Object.entries(next)
+        .filter(
+          ([questionId]) =>
+            dirtyIdsRef.current.has(questionId) &&
+            (nextVersions[questionId] ?? 0) > 0,
+        )
+        .map(([questionId, answer]) => ({
+          questionId,
+          answer,
+          clientVersion: nextVersions[questionId],
+        }));
+      if (list.length) {
+        setSaveState('saving');
+        const data = await api<{
+          saved: Array<{
+            questionId: string;
+            answerText: string;
+            clientVersion: number;
+          }>;
+        }>(`rounds/${round.id}/answers`, {
           method: 'PATCH',
           body: JSON.stringify({ answers: list }),
         });
+        const savedVersions = { ...versionsRef.current };
+        for (const item of data.saved)
+          savedVersions[item.questionId] = Math.max(
+            savedVersions[item.questionId] ?? 0,
+            item.clientVersion,
+          );
+        for (const item of data.saved)
+          if (versionsRef.current[item.questionId] === item.clientVersion)
+            dirtyIdsRef.current.delete(item.questionId);
+        versionsRef.current = savedVersions;
+        setVersions(savedVersions);
+        setSaveState(dirtyIdsRef.current.size ? 'dirty' : 'saved');
+      }
     },
     [round.id],
   );
   const updateAnswer = (id: string, value: string) => {
     if (!/^-?\d{0,4}$/.test(value)) return;
-    const next = { ...answers, [id]: value };
+    const next = { ...answersRef.current, [id]: value };
+    const nextVersions = {
+      ...versionsRef.current,
+      [id]: (versionsRef.current[id] ?? 0) + 1,
+    };
+    answersRef.current = next;
+    versionsRef.current = nextVersions;
+    dirtyIdsRef.current.add(id);
     setAnswers(next);
+    setVersions(nextVersions);
+    setSaveState('dirty');
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(
       () =>
-        void save(next).catch(() => setError('答案暂时没有保存，请检查网络')),
+        void save(next, nextVersions).catch((issue) => {
+          const conflict = (
+            issue as {
+              data?: {
+                code?: string;
+                questionId?: string;
+                answerText?: string;
+                clientVersion?: number;
+              };
+            }
+          ).data;
+          if (
+            conflict?.code === 'ANSWER_VERSION_STALE' &&
+            conflict.questionId
+          ) {
+            const keepServer = window.confirm(
+              '这道题已在另一页面或设备更新。点击“确定”使用已保存答案；点击“取消”用当前答案覆盖。',
+            );
+            const questionId = conflict.questionId;
+            const serverVersion = conflict.clientVersion ?? 0;
+            if (keepServer) {
+              const restored = {
+                ...answersRef.current,
+                [questionId]: conflict.answerText ?? '',
+              };
+              const restoredVersions = {
+                ...versionsRef.current,
+                [questionId]: serverVersion,
+              };
+              answersRef.current = restored;
+              versionsRef.current = restoredVersions;
+              dirtyIdsRef.current.delete(questionId);
+              setAnswers(restored);
+              setVersions(restoredVersions);
+              setSaveState('saved');
+              return;
+            }
+            const overwriteVersions = {
+              ...versionsRef.current,
+              [questionId]: serverVersion + 1,
+            };
+            versionsRef.current = overwriteVersions;
+            dirtyIdsRef.current.add(questionId);
+            setVersions(overwriteVersions);
+            void save(answersRef.current, overwriteVersions).catch(() => {
+              setSaveState('error');
+              setError('当前答案仍未保存，请检查网络后再试');
+            });
+            return;
+          }
+          setSaveState('error');
+          setError(
+            issue instanceof Error
+              ? issue.message
+              : '答案暂时没有保存，请检查网络',
+          );
+        }),
       700,
     );
   };
@@ -945,7 +1356,8 @@ function PracticeRound({
     setBusy(true);
     setError('');
     try {
-      await save(answers);
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      await save(answersRef.current, versionsRef.current);
       const data = await api<{ result: RecordItem; round: Round }>(
         `rounds/${round.id}/submit`,
         { method: 'POST' },
@@ -1027,6 +1439,19 @@ function PracticeRound({
           </span>
         </div>
       </section>
+      {saveState !== 'idle' && (
+        <p
+          className={`text-right text-xs font-bold ${saveState === 'error' ? 'text-[#D95F52]' : 'text-[#7D879C]'}`}
+        >
+          {saveState === 'saving'
+            ? '正在保存答案…'
+            : saveState === 'saved'
+              ? '答案已保存'
+              : saveState === 'dirty'
+                ? '答案将在片刻后保存'
+                : '有答案尚未保存'}
+        </p>
+      )}
       {error && <p className="notice-error">{error}</p>}
       <div className="space-y-7">
         {(Object.keys(levelInfo) as Level[]).map((level) => {
@@ -1043,46 +1468,90 @@ function PracticeRound({
                   </span>
                 </div>
               </div>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {questions.map((question) => {
-                  const blank = splitAnswerBlank(
-                    question.expression,
-                    question.level,
-                  );
-                  const answerInput = (
-                    <input
-                      inputMode="numeric"
-                      aria-label={`第 ${question.position} 题答案`}
-                      value={answers[question.id] ?? ''}
-                      onChange={(e) =>
-                        updateAnswer(question.id, e.target.value)
-                      }
+              {level === 'abacusMatch' ? (
+                <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                  {Object.values(
+                    questions.reduce<Record<string, RoundQuestion[]>>(
+                      (groups, question) => {
+                        const groupId = (
+                          question.promptData as AbacusMatchPrompt
+                        ).groupId;
+                        (groups[groupId] ??= []).push(question);
+                        return groups;
+                      },
+                      {},
+                    ),
+                  ).map((group) => (
+                    <AbacusMatchBoard
+                      questions={group}
+                      answers={answers}
+                      onAnswer={updateAnswer}
+                      key={(group[0].promptData as AbacusMatchPrompt).groupId}
                     />
-                  );
-                  return (
-                    <label
-                      className={`question-card ${blank ? 'question-card-concept' : ''}`}
-                      key={question.id}
-                    >
-                      <span className="question-number">
-                        {question.position}
-                      </span>
-                      {blank ? (
-                        <span className="inline-question-prompt">
-                          <strong>{blank.before}</strong>
-                          {answerInput}
-                          {blank.after && <strong>{blank.after}</strong>}
+                  ))}
+                </div>
+              ) : (
+                <div
+                  className={`mt-5 grid gap-3 ${level === 'abacusMove' ? 'grid-cols-1' : 'sm:grid-cols-2 lg:grid-cols-3'}`}
+                >
+                  {questions.map((question) => {
+                    if (level === 'abacusMove')
+                      return (
+                        <AbacusMoveQuestion
+                          question={question}
+                          answer={answers[question.id] ?? ''}
+                          onAnswer={updateAnswer}
+                          key={question.id}
+                        />
+                      );
+                    if (level === 'abacusCalculation')
+                      return (
+                        <AbacusCalculationQuestion
+                          question={question}
+                          answer={answers[question.id] ?? ''}
+                          onAnswer={updateAnswer}
+                          key={question.id}
+                        />
+                      );
+                    const blank = splitAnswerBlank(
+                      question.expression,
+                      question.level,
+                    );
+                    const answerInput = (
+                      <input
+                        inputMode="numeric"
+                        aria-label={`第 ${question.position} 题答案`}
+                        value={answers[question.id] ?? ''}
+                        onChange={(event) =>
+                          updateAnswer(question.id, event.target.value)
+                        }
+                      />
+                    );
+                    return (
+                      <label
+                        className={`question-card ${blank ? 'question-card-concept' : ''}`}
+                        key={question.id}
+                      >
+                        <span className="question-number">
+                          {question.position}
                         </span>
-                      ) : (
-                        <>
-                          <strong>{question.expression} =</strong>
-                          {answerInput}
-                        </>
-                      )}
-                    </label>
-                  );
-                })}
-              </div>
+                        {blank ? (
+                          <span className="inline-question-prompt">
+                            <strong>{blank.before}</strong>
+                            {answerInput}
+                            {blank.after && <strong>{blank.after}</strong>}
+                          </span>
+                        ) : (
+                          <>
+                            <strong>{question.expression} =</strong>
+                            {answerInput}
+                          </>
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
             </section>
           );
         })}
@@ -1104,6 +1573,36 @@ function PracticeRound({
         </button>
       </div>
     </div>
+  );
+}
+
+function QuestionAnswerSummary({ question }: { question: RoundQuestion }) {
+  if (question.level === 'abacusMove' || question.level === 'abacusMatch')
+    return (
+      <div className="abacus-review-summary">
+        <strong>{question.expression}</strong>
+        <span>你的珠形</span>
+        <Abacus value={Number(question.answer || 0)} compact label="作答珠形" />
+        {!question.isCorrect && question.correctAnswer !== undefined && (
+          <>
+            <span>正确珠形</span>
+            <Abacus
+              value={Number(question.correctAnswer)}
+              compact
+              label="正确珠形"
+            />
+          </>
+        )}
+      </div>
+    );
+  return (
+    <strong>
+      {formatAnsweredExpression(
+        question.expression,
+        question.answer,
+        question.level,
+      )}
+    </strong>
   );
 }
 
@@ -1159,14 +1658,12 @@ function ResultPanel({
               key={q.id}
             >
               <span>{q.position}</span>
-              <strong>
-                {formatAnsweredExpression(q.expression, q.answer, q.level)}
-              </strong>
+              <QuestionAnswerSummary question={q} />
               {q.isCorrect ? (
                 <Check />
-              ) : (
+              ) : q.level !== 'abacusMove' && q.level !== 'abacusMatch' ? (
                 <small>正确答案 {q.correctAnswer}</small>
-              )}
+              ) : null}
             </div>
           ))}
         </div>
@@ -1241,18 +1738,13 @@ function PracticeHistory({ records }: { records: RecordItem[] }) {
                       key={question.id}
                     >
                       <span>{question.position}</span>
-                      <strong>
-                        {formatAnsweredExpression(
-                          question.expression,
-                          question.answer,
-                          question.level,
-                        )}
-                      </strong>
+                      <QuestionAnswerSummary question={question} />
                       {question.isCorrect ? (
                         <Check />
-                      ) : (
+                      ) : question.level !== 'abacusMove' &&
+                        question.level !== 'abacusMatch' ? (
                         <small>正确答案 {question.correctAnswer}</small>
-                      )}
+                      ) : null}
                     </div>
                   ))}
                 </div>
@@ -1364,7 +1856,51 @@ function WrongBookPractice({
                       曾错 {item.mistake_count} 次
                     </small>
                   </div>
-                  {blank ? (
+                  {item.level === 'abacusMove' ? (
+                    <div className="grid justify-items-center gap-3">
+                      <strong className="font-title text-lg text-[#354158]">
+                        {item.expression}，拨出结果
+                      </strong>
+                      <Abacus
+                        value={Number(answers[item.id] || 0)}
+                        interactive
+                        showValue
+                        label={`${item.expression} 错题作答算盘`}
+                        onChange={(value) =>
+                          updateAnswer(item.id, String(value))
+                        }
+                      />
+                      {!answers[item.id] && (
+                        <button
+                          className="abacus-zero-button"
+                          type="button"
+                          onClick={() => updateAnswer(item.id, '0')}
+                        >
+                          确认答案是 0
+                        </button>
+                      )}
+                    </div>
+                  ) : item.level === 'abacusMatch' ? (
+                    <div className="grid gap-3">
+                      <strong className="text-center font-title text-lg text-[#354158]">
+                        {item.expression}，选择正确算盘
+                      </strong>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(
+                          item.prompt_data as AbacusMatchPrompt
+                        ).optionValues.map((value) => (
+                          <button
+                            type="button"
+                            className={`abacus-match-option ${answers[item.id] === String(value) ? 'paired' : ''}`}
+                            onClick={() => updateAnswer(item.id, String(value))}
+                            key={value}
+                          >
+                            <Abacus value={value} compact label="候选算盘" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : blank ? (
                     <div className="inline-wrong-prompt">
                       <strong>{blank.before}</strong>
                       {answerInput}

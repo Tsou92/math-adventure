@@ -3,13 +3,41 @@ export type Level =
   | 'explorer'
   | 'challenger'
   | 'multiplyMeaning'
-  | 'multiplyFacts';
+  | 'multiplyFacts'
+  | 'abacusMove'
+  | 'abacusMatch'
+  | 'abacusCalculation';
+
+export type AbacusMovePrompt = {
+  version: 1;
+  startValue: number;
+  operator: '+' | '−';
+  operand: number;
+};
+
+export type AbacusMatchPrompt = {
+  version: 1;
+  groupId: string;
+  optionValues: number[];
+};
+
+export type AbacusCalculationPrompt = {
+  version: 1;
+  startValue: number;
+  operations: Array<{ operator: '+' | '−'; value: number }>;
+};
+
+export type QuestionPrompt =
+  | AbacusMovePrompt
+  | AbacusMatchPrompt
+  | AbacusCalculationPrompt;
 
 export type Question = {
   id: string;
   level: Level;
   expression: string;
   answer: number;
+  promptData?: QuestionPrompt;
 };
 
 export type QuestionCounts = Record<Level, number>;
@@ -40,11 +68,46 @@ function seededRandom(seed: number) {
   };
 }
 
+function splitMatchGroups(count: number) {
+  const groups: number[] = [];
+  let remaining = count;
+  while (remaining > 0) {
+    if (remaining <= 4) {
+      groups.push(remaining);
+      break;
+    }
+    if (remaining === 5) {
+      groups.push(3, 2);
+      break;
+    }
+    groups.push(4);
+    remaining -= 4;
+  }
+  return groups;
+}
+
+function weightedQuota(count: number) {
+  if (count < 5) return null;
+  const weights = [0.4, 0.4, 0.2];
+  const quotas = weights.map((weight) => Math.floor(count * weight));
+  let remaining = count - quotas.reduce((sum, value) => sum + value, 0);
+  const ranked = weights
+    .map((weight, index) => ({
+      index,
+      remainder: count * weight - Math.floor(count * weight),
+    }))
+    .sort((a, b) => b.remainder - a.remainder || a.index - b.index);
+  for (let index = 0; remaining > 0; index += 1, remaining -= 1)
+    quotas[ranked[index % ranked.length].index] += 1;
+  return quotas as [number, number, number];
+}
+
 export function makeQuestionsForCounts(
   seed: number,
   counts: QuestionCounts,
   options: QuestionOptions = {},
 ): Question[] {
+  if (counts.abacusMatch === 1) throw new Error('空拨连线至少需要 2 道题');
   const random = seededRandom(seed);
   const int = (min: number, max: number) =>
     Math.floor(random() * (max - min + 1)) + min;
@@ -214,6 +277,124 @@ export function makeQuestionsForCounts(
     });
   }
 
+  const usedMoves = new Set<string>();
+  const moveQuota = weightedQuota(counts.abacusMove);
+  const moveKinds: Array<'crossFive' | 'crossTen' | 'regular'> = [];
+  if (moveQuota) {
+    moveKinds.push(
+      ...Array.from({ length: moveQuota[0] }, () => 'crossFive' as const),
+      ...Array.from({ length: moveQuota[1] }, () => 'crossTen' as const),
+      ...Array.from({ length: moveQuota[2] }, () => 'regular' as const),
+    );
+  }
+  const classifyMove = (start: number, answer: number) => {
+    const startDigit = start % 10;
+    const answerDigit = answer % 10;
+    if (
+      (answer > start && answerDigit < startDigit) ||
+      (answer < start && answerDigit > startDigit)
+    )
+      return 'crossTen';
+    if (
+      (startDigit < 5 && answerDigit >= 5) ||
+      (startDigit >= 5 && answerDigit < 5)
+    )
+      return 'crossFive';
+    return 'regular';
+  };
+  while (usedMoves.size < counts.abacusMove) {
+    const targetKind = moveQuota
+      ? moveKinds[usedMoves.size]
+      : (['crossFive', 'crossTen', 'regular'] as const)[
+          random() < 0.4 ? 0 : random() < 2 / 3 ? 1 : 2
+        ];
+    const isAddition = random() > 0.5;
+    const startValue = int(isAddition ? 0 : 2, isAddition ? 94 : 99);
+    const operand = int(1, isAddition ? 99 - startValue : startValue);
+    const answer = isAddition ? startValue + operand : startValue - operand;
+    if (classifyMove(startValue, answer) !== targetKind) continue;
+    const operator = isAddition ? '+' : '−';
+    const expression = `${startValue} ${operator} ${operand}`;
+    if (usedMoves.has(expression)) continue;
+    usedMoves.add(expression);
+    questions.push({
+      id: `abacusMove-${usedMoves.size}`,
+      level: 'abacusMove',
+      expression,
+      answer,
+      promptData: { version: 1, startValue, operator, operand },
+    });
+  }
+
+  let matchQuestionIndex = 0;
+  for (const [groupIndex, groupSize] of splitMatchGroups(
+    counts.abacusMatch,
+  ).entries()) {
+    const groupId = `abacus-match-${groupIndex + 1}`;
+    const group: Array<{
+      expression: string;
+      answer: number;
+    }> = [];
+    const answers = new Set<number>();
+    const expressions = new Set<string>();
+    while (group.length < groupSize) {
+      const isAddition = random() > 0.45;
+      const left = int(isAddition ? 1 : 10, isAddition ? 98 : 99);
+      const right = int(1, isAddition ? 99 - left : left);
+      const answer = isAddition ? left + right : left - right;
+      const expression = `${left} ${isAddition ? '+' : '−'} ${right}`;
+      if (answers.has(answer) || expressions.has(expression)) continue;
+      answers.add(answer);
+      expressions.add(expression);
+      group.push({ expression, answer });
+    }
+    const optionValues = [...answers];
+    for (let index = optionValues.length - 1; index > 0; index -= 1) {
+      const target = int(0, index);
+      [optionValues[index], optionValues[target]] = [
+        optionValues[target],
+        optionValues[index],
+      ];
+    }
+    for (const item of group) {
+      matchQuestionIndex += 1;
+      questions.push({
+        id: `abacusMatch-${matchQuestionIndex}`,
+        level: 'abacusMatch',
+        expression: item.expression,
+        answer: item.answer,
+        promptData: { version: 1, groupId, optionValues },
+      });
+    }
+  }
+
+  const usedCalculations = new Set<string>();
+  while (usedCalculations.size < counts.abacusCalculation) {
+    const startValue = int(5, 89);
+    let current = startValue;
+    const operations: AbacusCalculationPrompt['operations'] = [];
+    for (let step = 0; step < 2; step += 1) {
+      const canAdd = current < 99;
+      const canSubtract = current > 0;
+      const add = !canSubtract || (canAdd && random() > 0.5);
+      const value = int(1, add ? 99 - current : current);
+      operations.push({ operator: add ? '+' : '−', value });
+      current = add ? current + value : current - value;
+    }
+    const expression = `${startValue} ${operations
+      .map((operation) => `${operation.operator} ${operation.value}`)
+      .join(' ')}`;
+    if (usedCalculations.has(expression)) continue;
+    usedCalculations.add(expression);
+    questions.push({
+      id: `abacusCalculation-${usedCalculations.size}`,
+      level: 'abacusCalculation',
+      expression,
+      answer: current,
+      promptData: { version: 1, startValue, operations },
+    });
+  }
+
   return questions;
 }
 
@@ -226,6 +407,9 @@ export function makeQuestions(seed: number): Question[] {
       challenger: 10,
       multiplyMeaning: 0,
       multiplyFacts: 0,
+      abacusMove: 0,
+      abacusMatch: 0,
+      abacusCalculation: 0,
     },
     { challengerChain: true },
   );
