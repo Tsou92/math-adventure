@@ -38,3 +38,7 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
+
+# local QA and browser artifacts
+/.gstack/
+.gstack/

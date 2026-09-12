@@ -1,6 +1,6 @@
-import { neon } from '@neondatabase/serverless';
+import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 
-let client: ReturnType<typeof neon> | undefined;
+let client: NeonQueryFunction<false, false> | undefined;
 
 export function db() {
   const databaseUrl = process.env.DATABASE_URL;
@@ -8,4 +8,3 @@ export function db() {
   client ??= neon(databaseUrl);
   return client;
 }
-

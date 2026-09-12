@@ -1,0 +1,7 @@
+.gstack/
+.agents/
+work/
+outputs/
+.env*
+**/*.test.ts
+server/test-support.ts

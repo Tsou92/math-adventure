@@ -1,0 +1,164 @@
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { loadEnvFile } from 'node:process';
+import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+
+try {
+  loadEnvFile('.env.local');
+} catch {
+  // CI can inject DATABASE_URL without providing a local environment file.
+}
+
+type Sql = NeonQueryFunction<false, false>;
+export type TestActor = {
+  id: string;
+  familyId: string;
+  username: string;
+  cookie: string;
+};
+
+/** Every application query is redirected to a freshly created, private test schema. */
+export async function createIsolatedDatabase() {
+  if (!process.env.DATABASE_URL)
+    throw new Error(
+      'DATABASE_URL is required for PostgreSQL integration tests',
+    );
+  const client = neon(process.env.DATABASE_URL);
+  const schema = `audit_test_${randomBytes(10).toString('hex')}`;
+  if (!/^audit_test_[a-f0-9]{20}$/.test(schema))
+    throw new Error('Invalid test schema');
+
+  const sql = Object.assign(
+    (parts: TemplateStringsArray, ...parameters: unknown[]) => {
+      const scoped = parts.map((part) =>
+        part.replaceAll('kousuan.', `${schema}.`),
+      );
+      if (scoped.some((part) => /\bkousuan\b/.test(part)))
+        throw new Error('Unscoped application query refused');
+      const template = Object.assign(scoped, {
+        raw: [...scoped],
+      }) as unknown as TemplateStringsArray;
+      return client(template, ...parameters);
+    },
+    { transaction: client.transaction.bind(client) },
+  ) as Sql;
+
+  let created = false;
+  const cleanup = async () => {
+    if (created) {
+      await client.query(`DROP SCHEMA ${schema} CASCADE`);
+      created = false;
+    }
+  };
+  try {
+    // CREATE without IF NOT EXISTS prevents claiming or cleaning another run's schema.
+    await client.query(`CREATE SCHEMA ${schema}`);
+    created = true;
+    const migrations = [
+      '001_initial.sql',
+      '002_multiplication_questions.sql',
+      '003_abacus_questions.sql',
+      '004_learning_experience.sql',
+    ];
+    const statements = [];
+    for (const migration of migrations) {
+      const original = await readFile(
+        new URL(`../db/migrations/${migration}`, import.meta.url),
+        'utf8',
+      );
+      const scoped = original
+        // Extensions are shared: tests neither create nor remove them.
+        .replace(/CREATE EXTENSION IF NOT EXISTS pgcrypto;/g, '')
+        .replace(/CREATE SCHEMA IF NOT EXISTS kousuan;/g, '')
+        .replaceAll('kousuan.', `${schema}.`);
+      if (/\bkousuan\b/.test(scoped))
+        throw new Error('Unscoped migration refused');
+      for (const statement of scoped
+        .split(';')
+        .map((part) => part.trim())
+        .filter(Boolean)) {
+        statements.push(client.query(statement));
+      }
+    }
+    await client.transaction(statements);
+    return { sql, cleanup };
+  } catch (error) {
+    await cleanup();
+    throw error;
+  }
+}
+
+export async function seedTestFamily(sql: Sql, passwordHash: string) {
+  await sql`TRUNCATE kousuan.families, kousuan.login_attempts CASCADE`;
+  const firstFamily = randomUUID(),
+    secondFamily = randomUUID();
+  const entries = [
+    ['parent', firstFamily],
+    ['parent', secondFamily],
+    ['child', firstFamily],
+    ['child', firstFamily],
+    ['child', secondFamily],
+  ] as const;
+  const statements = [
+    sql`INSERT INTO kousuan.families(id,name) VALUES(${firstFamily},'集成测试家庭甲'),(${secondFamily},'集成测试家庭乙')`,
+  ];
+  const actors = entries.map(([role, familyId]) => {
+    const id = randomUUID(),
+      username = `test_${randomBytes(6).toString('hex')}`;
+    const token = randomBytes(32).toString('base64url');
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    statements.push(
+      sql`INSERT INTO kousuan.users(id,family_id,username,display_name,password_hash,role) VALUES(${id},${familyId},${username},'测试账号',${passwordHash},${role})`,
+      sql`INSERT INTO kousuan.sessions(user_id,token_hash,expires_at) VALUES(${id},${tokenHash},now()+interval '1 day')`,
+    );
+    return { id, familyId, username, cookie: `kousuan_session=${token}` };
+  });
+  await sql.transaction(statements);
+  const [parent, otherParent, child, sibling, otherChild] = actors;
+  return { parent, otherParent, child, sibling, otherChild };
+}
+
+export function apiRequest(
+  path: string,
+  method: string,
+  actor?: TestActor,
+  body?: unknown,
+  ip = '192.0.2.1',
+) {
+  return {
+    method,
+    body,
+    url: `/api/${path}`,
+    query: { path },
+    headers: {
+      host: 'test.invalid',
+      origin: 'https://test.invalid',
+      'x-forwarded-for': ip,
+      ...(actor ? { cookie: actor.cookie } : {}),
+    },
+  } as unknown as VercelRequest;
+}
+
+export function apiResponse() {
+  const result: {
+    status: number;
+    body: Record<string, unknown>;
+    headers: Record<string, string>;
+  } = { status: 0, body: {}, headers: {} };
+  const response = {
+    status(status: number) {
+      result.status = status;
+      return response;
+    },
+    setHeader(name: string, value: string) {
+      result.headers[name] = value;
+      return response;
+    },
+    json(body: Record<string, unknown>) {
+      result.body = body;
+      return response;
+    },
+  } as unknown as VercelResponse;
+  return { response, result };
+}
