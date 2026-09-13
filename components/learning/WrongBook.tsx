@@ -271,12 +271,12 @@ export function WrongBook({
                   {(hints[item.id] ?? 0) >= tip.length && (
                     <details
                       open={!!revealed[item.id]}
-                      onToggle={(e) =>
-                        setRevealed((r) => ({
-                          ...r,
-                          [item.id]: e.currentTarget.open,
-                        }))
-                      }
+                      onToggle={(e) => {
+                        const open = e.currentTarget.open;
+                        setRevealed((r) =>
+                          r[item.id] === open ? r : { ...r, [item.id]: open },
+                        );
+                      }}
                     >
                       <summary>查看答案，再自己算一遍</summary>
                       {item.level.startsWith('abacus') &&
