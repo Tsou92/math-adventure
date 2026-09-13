@@ -18,14 +18,14 @@ export function RecoveryReceipt({
   const download = () => {
     const blob = new Blob(
       [
-        `口算星球账号恢复码\n用户名：${username}\n恢复码：${code}\n请离线妥善保存，不要发给他人。每个恢复码只能使用一次。\n`,
+        `数学星球账号恢复码\n用户名：${username}\n恢复码：${code}\n请离线妥善保存，不要发给他人。每个恢复码只能使用一次。\n`,
       ],
       { type: 'text/plain;charset=utf-8' },
     );
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = '口算星球-账号恢复码.txt';
+    a.download = '数学星球-账号恢复码.txt';
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     setSaved(true);
@@ -163,7 +163,7 @@ export function Login({ onLogin }: { onLogin: (user: User) => void }) {
               <span className="brand-symbol">
                 <Rocket />
               </span>
-              <span>口算星球</span>
+              <span>数学星球</span>
             </div>
             <h1>
               {mode === 'login'
@@ -305,7 +305,7 @@ export function Login({ onLogin }: { onLogin: (user: User) => void }) {
                 {busy
                   ? '请稍候…'
                   : mode === 'login'
-                    ? '进入口算星球'
+                    ? '进入数学星球'
                     : mode === 'register'
                       ? '创建家长账号'
                       : '重设密码'}

@@ -15,12 +15,12 @@ export function AppHeader({
   return (
     <header className="app-header">
       <div className="app-header-inner">
-        <button className="brand" onClick={onHome} aria-label="口算星球首页">
+        <button className="brand" onClick={onHome} aria-label="数学星球首页">
           <span className="brand-symbol">
             <Rocket />
           </span>
           <span>
-            口算星球
+            数学星球
             <small>
               {user.role === 'child' ? '每天一点，慢慢变厉害' : '家长中心'}
             </small>
