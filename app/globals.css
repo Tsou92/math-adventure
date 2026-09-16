@@ -2422,8 +2422,54 @@ progress::-webkit-progress-value {
   margin-top: 24px;
 }
 .result-hero {
+  position: relative;
   padding: 40px;
   text-align: center;
+}
+.completion-stamp {
+  position: absolute;
+  top: 26px;
+  right: 30px;
+  width: 154px;
+  padding: 10px 12px 8px;
+  border: 3px double #9b8bce;
+  border-radius: 12px;
+  background: #faf8ff;
+  color: #69549a;
+  transform: rotate(4deg);
+  font-variant-numeric: tabular-nums;
+}
+.stamp-caption {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding-bottom: 5px;
+  margin-bottom: 6px;
+  border-bottom: 1px dashed #c8bde0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+.stamp-caption svg {
+  width: 14px;
+  height: 14px;
+}
+.completion-stamp time {
+  display: grid;
+  gap: 2px;
+  line-height: 1.4;
+}
+.completion-stamp time strong {
+  font-size: 17px;
+  font-weight: 750;
+}
+.completion-stamp time span {
+  font-size: 15px;
+  letter-spacing: 0.08em;
+}
+.completion-stamp small {
+  font-size: 10px;
 }
 .result-hero h1 {
   margin: 14px 0;
@@ -2925,6 +2971,11 @@ progress::-webkit-progress-value {
   }
   .result-hero {
     padding: 28px 20px;
+  }
+  .completion-stamp {
+    position: static;
+    margin: 0 0 24px auto;
+    transform: rotate(2deg);
   }
   .result-hero h1 {
     font-size: 27px;

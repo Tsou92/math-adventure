@@ -2,6 +2,38 @@ import { ArrowRight, Check, RefreshCw, Sparkles } from 'lucide-react';
 import type { Round, RecordItem } from '@/lib/types';
 import { formatDuration } from '@/lib/learning';
 import { QuestionAnswerSummary } from './History';
+
+function CompletionStamp({ value }: { value: string | null }) {
+  if (!value || !Number.isFinite(Date.parse(value))) return null;
+  const completed = new Date(value);
+  const date = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(completed);
+  const time = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).format(completed);
+  return (
+    <div className="completion-stamp">
+      <span className="stamp-caption">
+        <Check aria-hidden="true" />
+        本轮完成
+      </span>
+      <time dateTime={value} aria-label={`完成时间：${date} ${time}，北京时间`}>
+        <strong>{date}</strong>
+        <span>{time}</span>
+      </time>
+      <small>北京时间</small>
+    </div>
+  );
+}
+
 export function Results({
   result,
   round,
@@ -21,6 +53,7 @@ export function Results({
   return (
     <div className="results-page">
       <section className="panel result-hero">
+        <CompletionStamp value={result.completed_at ?? round.completedAt} />
         <span className="reward-symbol">
           <Sparkles />
         </span>
