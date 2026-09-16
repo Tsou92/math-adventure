@@ -29,6 +29,11 @@ export const levelInfo: Record<
     subtitle: '2～9 的乘法计算',
     tone: 'blue',
   },
+  multiplyMixed: {
+    title: '乘法后加减',
+    subtitle: '先算乘法，再进退位加减 · 如 6×9＋28',
+    tone: 'purple',
+  },
   abacusMove: {
     title: '珠心算·空拨画珠',
     subtitle: '看起始珠形，拨出计算结果',
@@ -52,6 +57,7 @@ export const emptyCounts: QuestionCounts = {
   challenger: 0,
   multiplyMeaning: 0,
   multiplyFacts: 0,
+  multiplyMixed: 0,
   abacusMove: 0,
   abacusMatch: 0,
   abacusCalculation: 0,
@@ -142,6 +148,21 @@ export function getQuestionHints(question: {
   level: Level;
 }): string[] {
   const expression = question.expression.replaceAll('-', '−').trim();
+  const mixed = expression.match(/^(\d+)\s*×\s*(\d+)\s*([+−])\s*(\d+)$/);
+  if (mixed) {
+    const left = Number(mixed[1]);
+    const right = Number(mixed[2]);
+    const product = left * right;
+    const operand = Number(mixed[4]);
+    const nextHint = getQuestionHints({
+      expression: `${product} ${mixed[3]} ${operand}`,
+      level: 'challenger',
+    })[1];
+    return [
+      `先算乘法，再算加减。想一想 ${left}×${right} 的乘法口诀。`,
+      `${left}×${right}＝${product}，接着算 ${product}${mixed[3]}${operand}。${nextHint}`,
+    ];
+  }
   const simple = expression.match(/^(\d+)\s*([+−×])\s*(\d+)$/);
   if (simple) {
     const a = Number(simple[1]),

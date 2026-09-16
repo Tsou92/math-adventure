@@ -7,7 +7,10 @@ import type { LearningPreferences } from '@/lib/types';
 import { levelInfo } from '@/lib/learning';
 const groups: { name: string; levels: Level[] }[] = [
   { name: '加减法', levels: ['starter', 'explorer', 'challenger'] },
-  { name: '乘法', levels: ['multiplyMeaning', 'multiplyFacts'] },
+  {
+    name: '乘法',
+    levels: ['multiplyMeaning', 'multiplyFacts', 'multiplyMixed'],
+  },
   {
     name: '珠心算',
     levels: ['abacusMove', 'abacusMatch', 'abacusCalculation'],

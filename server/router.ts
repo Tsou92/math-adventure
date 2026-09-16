@@ -80,6 +80,7 @@ const countSchema = z
     challenger: z.number().int().min(0).max(50),
     multiplyMeaning: z.number().int().min(0).max(50),
     multiplyFacts: z.number().int().min(0).max(50),
+    multiplyMixed: z.number().int().min(0).max(50).default(0),
     abacusMove: z.number().int().min(0).max(50),
     abacusMatch: z.number().int().min(0).max(50),
     abacusCalculation: z.number().int().min(0).max(50),
@@ -371,6 +372,7 @@ function serializeRound(round: Row, questions: Row[]) {
       challenger: round.challenger_count,
       multiplyMeaning: round.multiply_meaning_count,
       multiplyFacts: round.multiply_facts_count,
+      multiplyMixed: round.multiply_mixed_count ?? 0,
       abacusMove: round.abacus_move_count,
       abacusMatch: round.abacus_match_count,
       abacusCalculation: round.abacus_calculation_count,
@@ -442,8 +444,8 @@ async function createRound(req: VercelRequest, res: VercelResponse) {
   const seed = randomInt(1, 2_000_000_000);
   const generated = makeQuestionsForCounts(seed, counts, { challengerChain });
   const statements = [
-    sql`INSERT INTO kousuan.practice_rounds (id, user_id, family_id, idempotency_key, source, package_name, starter_count, explorer_count, challenger_count, multiply_meaning_count, multiply_facts_count, abacus_move_count, abacus_match_count, abacus_calculation_count, total_count, seed, mode)
-      VALUES (${roundId}, ${user.id}, ${user.family_id}, ${input.idempotencyKey}, ${input.source}, ${packageName}, ${counts.starter}, ${counts.explorer}, ${counts.challenger}, ${counts.multiplyMeaning}, ${counts.multiplyFacts}, ${counts.abacusMove}, ${counts.abacusMatch}, ${counts.abacusCalculation}, ${generated.length}, ${seed}, ${input.mode})`,
+    sql`INSERT INTO kousuan.practice_rounds (id, user_id, family_id, idempotency_key, source, package_name, starter_count, explorer_count, challenger_count, multiply_meaning_count, multiply_facts_count, multiply_mixed_count, abacus_move_count, abacus_match_count, abacus_calculation_count, total_count, seed, mode)
+      VALUES (${roundId}, ${user.id}, ${user.family_id}, ${input.idempotencyKey}, ${input.source}, ${packageName}, ${counts.starter}, ${counts.explorer}, ${counts.challenger}, ${counts.multiplyMeaning}, ${counts.multiplyFacts}, ${counts.multiplyMixed}, ${counts.abacusMove}, ${counts.abacusMatch}, ${counts.abacusCalculation}, ${generated.length}, ${seed}, ${input.mode})`,
     ...generated.map(
       (
         question,
@@ -667,6 +669,7 @@ async function roundAction(
       challenger: Number(source[0].challenger_count),
       multiplyMeaning: Number(source[0].multiply_meaning_count),
       multiplyFacts: Number(source[0].multiply_facts_count),
+      multiplyMixed: Number(source[0].multiply_mixed_count ?? 0),
       abacusMove: Number(source[0].abacus_move_count),
       abacusMatch: Number(source[0].abacus_match_count),
       abacusCalculation: Number(source[0].abacus_calculation_count),
@@ -681,8 +684,8 @@ async function roundAction(
     const seed = randomInt(1, 2_000_000_000);
     const generated = makeQuestionsForCounts(seed, counts, { challengerChain });
     await sql.transaction([
-      sql`INSERT INTO kousuan.practice_rounds (id, user_id, family_id, idempotency_key, source, package_name, starter_count, explorer_count, challenger_count, multiply_meaning_count, multiply_facts_count, abacus_move_count, abacus_match_count, abacus_calculation_count, total_count, seed, mode)
-        VALUES (${newId}, ${user.id}, ${user.family_id}, ${parsed.idempotencyKey}, 'repeat', ${`${String(source[0].package_name)}·再练一次`}, ${counts.starter}, ${counts.explorer}, ${counts.challenger}, ${counts.multiplyMeaning}, ${counts.multiplyFacts}, ${counts.abacusMove}, ${counts.abacusMatch}, ${counts.abacusCalculation}, ${generated.length}, ${seed}, ${source[0].mode})`,
+      sql`INSERT INTO kousuan.practice_rounds (id, user_id, family_id, idempotency_key, source, package_name, starter_count, explorer_count, challenger_count, multiply_meaning_count, multiply_facts_count, multiply_mixed_count, abacus_move_count, abacus_match_count, abacus_calculation_count, total_count, seed, mode)
+        VALUES (${newId}, ${user.id}, ${user.family_id}, ${parsed.idempotencyKey}, 'repeat', ${`${String(source[0].package_name)}·再练一次`}, ${counts.starter}, ${counts.explorer}, ${counts.challenger}, ${counts.multiplyMeaning}, ${counts.multiplyFacts}, ${counts.multiplyMixed}, ${counts.abacusMove}, ${counts.abacusMatch}, ${counts.abacusCalculation}, ${generated.length}, ${seed}, ${source[0].mode})`,
       ...generated.map(
         (question, index) =>
           sql`INSERT INTO kousuan.round_questions (round_id, position, level, expression, correct_answer, prompt_data) VALUES (${newId}, ${index + 1}, ${question.level}, ${question.expression}, ${question.answer}, ${JSON.stringify(question.promptData ?? {})}::jsonb)`,
@@ -698,7 +701,7 @@ async function records(req: VercelRequest, res: VercelResponse) {
   const user = await requireUser(req, ['child']);
   const rows = await db()`WITH recent AS (
       SELECT id, package_name, starter_count, explorer_count, challenger_count,
-        multiply_meaning_count, multiply_facts_count, abacus_move_count,
+        multiply_meaning_count, multiply_facts_count, multiply_mixed_count, abacus_move_count,
         abacus_match_count, abacus_calculation_count, total_count,
         score, correct_count, duration_seconds, started_at, completed_at, mode
       FROM kousuan.practice_rounds
@@ -722,7 +725,7 @@ async function records(req: VercelRequest, res: VercelResponse) {
     LEFT JOIN kousuan.round_questions q ON q.round_id = recent.id
     LEFT JOIN kousuan.practice_answers a ON a.question_id = q.id
     GROUP BY recent.id, recent.package_name, recent.starter_count, recent.explorer_count,
-      recent.challenger_count, recent.multiply_meaning_count, recent.multiply_facts_count,
+      recent.challenger_count, recent.multiply_meaning_count, recent.multiply_facts_count, recent.multiply_mixed_count,
       recent.abacus_move_count, recent.abacus_match_count, recent.abacus_calculation_count,
       recent.total_count, recent.score, recent.correct_count,
       recent.duration_seconds, recent.started_at, recent.completed_at, recent.mode

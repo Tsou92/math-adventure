@@ -18,11 +18,12 @@ import {
 } from './test-support';
 import { hashPassword } from './auth';
 import { handleApi } from './router';
-import { defaultPreferences } from '../lib/learning';
+import { defaultPreferences, emptyCounts } from '../lib/learning';
 import type {
   LearningPreferences,
   LearningProgress,
   Round,
+  RecordItem,
   WrongItem,
 } from '../lib/types';
 const state = vi.hoisted(() => ({
@@ -87,6 +88,185 @@ describe.skipIf(!process.env.DATABASE_URL)(
     afterAll(async () => {
       await isolated?.cleanup();
     }, 20_000);
+    it('fills the new count for saved legacy preferences and rejects invalid new counts', async () => {
+      const { multiplyMixed: _unused, ...legacyCounts } =
+        defaultPreferences.counts;
+      const legacy = { ...defaultPreferences, counts: legacyCounts };
+      await state.sql!`INSERT INTO kousuan.learning_preferences(user_id,settings) VALUES(${family.child.id},${JSON.stringify(legacy)}::jsonb)`;
+      const saved = await request<{ preferences: LearningPreferences }>(
+        'learning/preferences',
+        'GET',
+        family.child,
+      );
+      expect(saved.status).toBe(200);
+      expect(saved.body.preferences.counts).toEqual(defaultPreferences.counts);
+      const created = await request<{ round: Round }>(
+        'rounds',
+        'POST',
+        family.child,
+        {
+          ...legacy,
+          source: 'custom',
+          idempotencyKey: randomUUID(),
+        },
+      );
+      expect(created.status).toBe(201);
+      expect(created.body.round.counts.multiplyMixed).toBe(0);
+      for (const count of [-1, 51, 1.5]) {
+        const input = {
+          ...defaultPreferences,
+          counts: { ...emptyCounts, multiplyMixed: count },
+        };
+        expect(
+          (await request('learning/preferences', 'PUT', family.child, input))
+            .status,
+        ).toBe(400);
+        expect(
+          (
+            await request('rounds', 'POST', family.child, {
+              ...input,
+              source: 'custom',
+              idempotencyKey: randomUUID(),
+            })
+          ).status,
+        ).toBe(400);
+      }
+      expect(
+        (
+          await request('rounds', 'POST', family.child, {
+            ...defaultPreferences,
+            counts: {
+              ...emptyCounts,
+              starter: 50,
+              explorer: 1,
+              multiplyMixed: 50,
+            },
+            source: 'custom',
+            idempotencyKey: randomUUID(),
+          })
+        ).status,
+      ).toBe(400);
+    }, 30_000);
+
+    it('persists, grades, reviews and repeats multiplication mixed rounds with a stable completion time', async () => {
+      const settings = {
+        ...defaultPreferences,
+        counts: { ...emptyCounts, multiplyMixed: 4 },
+      };
+      expect(
+        (await request('learning/preferences', 'PUT', family.child, settings))
+          .status,
+      ).toBe(200);
+      const preferences = await request<{ preferences: LearningPreferences }>(
+        `parent/children/${family.child.id}/preferences`,
+        'GET',
+        family.parent,
+      );
+      expect(preferences.body.preferences.counts.multiplyMixed).toBe(4);
+      const created = await request<{ round: Round }>(
+        'rounds',
+        'POST',
+        family.child,
+        {
+          ...settings,
+          source: 'custom',
+          idempotencyKey: randomUUID(),
+        },
+      );
+      expect(created.status).toBe(201);
+      const r = created.body.round;
+      expect(r.counts).toEqual(settings.counts);
+      expect(r.questions).toHaveLength(4);
+      expect(
+        r.questions.every(
+          (q) => q.level === 'multiplyMixed' && q.correctAnswer === undefined,
+        ),
+      ).toBe(true);
+      expect(
+        (await request(`rounds/${r.id}/start`, 'POST', family.child)).status,
+      ).toBe(200);
+      const questions =
+        await state.sql!`SELECT id,correct_answer FROM kousuan.round_questions WHERE round_id=${r.id} ORDER BY position`;
+      const answers = questions.map((q, i) => ({
+        questionId: q.id,
+        answer: i === 0 ? '9999' : String(q.correct_answer),
+        clientVersion: 1,
+      }));
+      expect(
+        (
+          await request(`rounds/${r.id}/answers`, 'PATCH', family.child, {
+            answers,
+          })
+        ).status,
+      ).toBe(200);
+      const submitted = await request<{ result: RecordItem; round: Round }>(
+        `rounds/${r.id}/submit`,
+        'POST',
+        family.child,
+      );
+      expect(submitted.status).toBe(200);
+      expect(submitted.body.result.correct_count).toBe(3);
+      expect(submitted.body.result.score).toBe(75);
+      expect(submitted.body.result.multiply_mixed_count).toBe(4);
+      const completedAt = submitted.body.result.completed_at;
+      expect(Number.isFinite(Date.parse(completedAt))).toBe(true);
+      expect(submitted.body.round.completedAt).toEqual(completedAt);
+      const again = await request<{ result: RecordItem }>(
+        `rounds/${r.id}/submit`,
+        'POST',
+        family.child,
+      );
+      expect(again.body.result.completed_at).toEqual(completedAt);
+      const history = await request<{ records: RecordItem[] }>(
+        'records',
+        'GET',
+        family.child,
+      );
+      expect(history.status).toBe(200);
+      expect(history.body.records[0].multiply_mixed_count).toBe(4);
+      expect(history.body.records[0].completed_at).toEqual(completedAt);
+      const wrong = await request<{ wrongQuestions: WrongItem[] }>(
+        'wrong-book',
+        'GET',
+        family.child,
+      );
+      expect(wrong.body.wrongQuestions).toHaveLength(1);
+      const item = wrong.body.wrongQuestions[0];
+      expect(item.level).toBe('multiplyMixed');
+      const reviewed = await request(
+        `wrong-book/${item.id}/review`,
+        'POST',
+        family.child,
+        {
+          answer: String(item.correct_answer),
+          attemptId: randomUUID(),
+        },
+      );
+      expect(reviewed.status).toBe(200);
+      expect(reviewed.body.correct).toBe(true);
+      const stats = await request<LearningProgress>(
+        'learning/progress',
+        'GET',
+        family.child,
+      );
+      expect(stats.body.topics).toContainEqual(
+        expect.objectContaining({
+          level: 'multiplyMixed',
+          attempted: 4,
+          correct: 3,
+        }),
+      );
+      const repeat = await request<{ round: Round }>(
+        `rounds/${r.id}/repeat`,
+        'POST',
+        family.child,
+        { idempotencyKey: randomUUID() },
+      );
+      expect(repeat.status).toBe(201);
+      expect(repeat.body.round.counts).toEqual(settings.counts);
+      expect(repeat.body.round.questions).toHaveLength(4);
+      expect(repeat.body.round.completedAt).toBeNull();
+    }, 30_000);
     it('persists preferences and enforces ownership and counts', async () => {
       const settings = { ...defaultPreferences, mode: 'challenge' as const };
       expect(

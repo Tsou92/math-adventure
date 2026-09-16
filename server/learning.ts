@@ -14,6 +14,7 @@ export const preferencesSchema = z.object({
       challenger: z.number().int().min(0).max(50),
       multiplyMeaning: z.number().int().min(0).max(50),
       multiplyFacts: z.number().int().min(0).max(50),
+      multiplyMixed: z.number().int().min(0).max(50).default(0),
       abacusMove: z.number().int().min(0).max(50),
       abacusMatch: z.number().int().min(0).max(50),
       abacusCalculation: z.number().int().min(0).max(50),
@@ -53,7 +54,9 @@ export async function preferences(
     const rows =
       await db()`SELECT settings FROM kousuan.learning_preferences WHERE user_id=${userId}`;
     return send(res, 200, {
-      preferences: rows[0]?.settings ?? defaultPreferences,
+      preferences: preferencesSchema.parse(
+        rows[0]?.settings ?? defaultPreferences,
+      ),
     });
   }
   method(req, 'PUT');

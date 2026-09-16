@@ -40,6 +40,7 @@ export type RecordItem = {
   challenger_count: number;
   multiply_meaning_count: number;
   multiply_facts_count: number;
+  multiply_mixed_count: number;
   abacus_move_count: number;
   abacus_match_count: number;
   abacus_calculation_count: number;

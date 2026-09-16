@@ -14,6 +14,25 @@ import {
 } from './learning';
 
 describe('学习体验辅助逻辑', () => {
+  it('乘法后加减的提示先引导乘法，再引导进退位且不直接给出最终答案', () => {
+    const addition = getQuestionHints({
+      expression: '6 × 9 + 28',
+      level: 'multiplyMixed',
+    });
+    expect(addition[0]).toContain('先算乘法，再算加减');
+    expect(addition[1]).toContain('6×9＝54');
+    expect(addition[1]).toContain('先算 54＋6，再加 22');
+    expect(addition.join('')).not.toContain('82');
+    const subtraction = getQuestionHints({
+      expression: '6 × 9 − 28',
+      level: 'multiplyMixed',
+    });
+    expect(subtraction[1]).toContain('先算 54−20，再减 8');
+    expect(subtraction.join('')).not.toContain('26');
+    expect(formatAnsweredExpression('3 × 5 + 19', 34, 'multiplyMixed')).toBe(
+      '3 × 5 + 19 = 34',
+    );
+  });
   it('快捷开始默认提供十道基础练习，空配置仍可独立使用', () => {
     expect(defaultPreferences.counts.starter).toBe(10);
     expect(

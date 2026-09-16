@@ -48,6 +48,7 @@ function recordRound(record: RecordItem): Round {
       challenger: record.challenger_count,
       multiplyMeaning: record.multiply_meaning_count,
       multiplyFacts: record.multiply_facts_count,
+      multiplyMixed: record.multiply_mixed_count ?? 0,
       abacusMove: record.abacus_move_count,
       abacusMatch: record.abacus_match_count,
       abacusCalculation: record.abacus_calculation_count,

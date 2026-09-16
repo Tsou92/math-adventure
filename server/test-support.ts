@@ -60,6 +60,7 @@ export async function createIsolatedDatabase() {
       '002_multiplication_questions.sql',
       '003_abacus_questions.sql',
       '004_learning_experience.sql',
+      '005_multiply_mixed.sql',
     ];
     const statements = [];
     for (const migration of migrations) {
