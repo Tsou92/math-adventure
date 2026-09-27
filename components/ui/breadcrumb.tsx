@@ -63,6 +63,7 @@ function BreadcrumbPage({ className, ...props }: React.ComponentProps<'span'>) {
   return (
     <span
       data-slot="breadcrumb-page"
+      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- 当前页使用带 aria-disabled 的 link 语义是合法模式，改用 a 会引入导航行为
       role="link"
       aria-disabled="true"
       aria-current="page"

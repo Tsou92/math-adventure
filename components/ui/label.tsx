@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 
 function Label({ className, ...props }: React.ComponentProps<'label'>) {
   return (
+    // oxlint-disable-next-line jsx-a11y/label-has-associated-control -- 通用 Label 原语，关联控件由使用方通过 htmlFor 或嵌套传入
     <label
       data-slot="label"
       className={cn(

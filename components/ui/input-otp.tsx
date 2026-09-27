@@ -75,6 +75,7 @@ function InputOTPSeparator({ ...props }: React.ComponentProps<'div'>) {
     <div
       data-slot="input-otp-separator"
       className="[&_svg:not([class*='size-'])]:size-4 flex items-center"
+      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- 自定义分隔符使用 role="separator" 是合法 ARIA 语义，改用 hr 无法承载图标
       role="separator"
       {...props}
     >

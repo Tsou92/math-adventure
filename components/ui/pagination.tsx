@@ -55,6 +55,7 @@ function PaginationLink({
       className={cn(className)}
       nativeButton={false}
       render={
+        // oxlint-disable-next-line jsx-a11y/anchor-is-valid, jsx-a11y/anchor-has-content -- href 与子内容由调用方 props 透传并经 Button 的 render 合并，静态分析无法感知
         <a
           aria-current={isActive ? 'page' : undefined}
           data-slot="pagination-link"

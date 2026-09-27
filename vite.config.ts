@@ -1,7 +1,9 @@
 import { sites } from '@openai/sites-vite-plugin';
 import tailwindcss from '@tailwindcss/postcss';
 import vinext from 'vinext';
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv, type ViteDevServer } from 'vite';
+import { fileURLToPath } from 'node:url';
+import { createDevApiMiddleware } from './server/dev-api';
 import hostingConfig from './.openai/hosting.json';
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
@@ -34,7 +36,12 @@ const localBindingConfig = {
     : [],
 };
 
-export default defineConfig(async () => {
+export default defineConfig(async ({ command, mode }) => {
+  if (command === 'serve') {
+    const env = loadEnv(mode, fileURLToPath(new URL('.', import.meta.url)), '');
+    if (!process.env.DATABASE_URL && env.DATABASE_URL)
+      process.env.DATABASE_URL = env.DATABASE_URL;
+  }
   // Keep Wrangler and Miniflare state project-local. These are non-secret tool
   // settings; application environment belongs in ignored `.env*` files.
   process.env.WRANGLER_WRITE_LOGS ??= 'false';
@@ -50,6 +57,13 @@ export default defineConfig(async () => {
       ? { watch: { useFsEvents: false, usePolling: true } }
       : undefined,
     plugins: [
+      {
+        name: 'local-math-api',
+        apply: 'serve',
+        configureServer(server: ViteDevServer) {
+          server.middlewares.use(createDevApiMiddleware());
+        },
+      },
       vinext(),
       sites(),
       cloudflare({

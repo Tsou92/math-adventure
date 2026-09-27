@@ -9,6 +9,7 @@ import { Separator } from '@/components/ui/separator';
 function ItemGroup({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
+      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- ItemGroup 的子项是 div，无法改为 ul/li；role="list" 保留列表语义
       role="list"
       data-slot="item-group"
       className={cn(

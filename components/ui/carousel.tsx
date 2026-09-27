@@ -58,14 +58,29 @@ function Carousel({
     },
     plugins,
   );
-  const [canScrollPrev, setCanScrollPrev] = React.useState(false);
-  const [canScrollNext, setCanScrollNext] = React.useState(false);
+  const subscribeCanScroll = React.useCallback(
+    (onStoreChange: () => void) => {
+      if (!api) return () => {};
+      api.on('select', onStoreChange);
+      api.on('reInit', onStoreChange);
+      return () => {
+        api.off('select', onStoreChange);
+        api.off('reInit', onStoreChange);
+      };
+    },
+    [api],
+  );
 
-  const onSelect = React.useCallback((api: CarouselApi) => {
-    if (!api) return;
-    setCanScrollPrev(api.canScrollPrev());
-    setCanScrollNext(api.canScrollNext());
-  }, []);
+  const canScrollPrev = React.useSyncExternalStore(
+    subscribeCanScroll,
+    () => api?.canScrollPrev() ?? false,
+    () => false,
+  );
+  const canScrollNext = React.useSyncExternalStore(
+    subscribeCanScroll,
+    () => api?.canScrollNext() ?? false,
+    () => false,
+  );
 
   const scrollPrev = React.useCallback(() => {
     api?.scrollPrev();
@@ -93,17 +108,6 @@ function Carousel({
     setApi(api);
   }, [api, setApi]);
 
-  React.useEffect(() => {
-    if (!api) return;
-    onSelect(api);
-    api.on('reInit', onSelect);
-    api.on('select', onSelect);
-
-    return () => {
-      api?.off('select', onSelect);
-    };
-  }, [api, onSelect]);
-
   return (
     <CarouselContext.Provider
       value={{
@@ -121,6 +125,7 @@ function Carousel({
       <div
         onKeyDownCapture={handleKeyDown}
         className={cn('relative', className)}
+        // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- role="region" 是轮播容器合法的 ARIA 语义，改用 section 会改变 DOM 与样式
         role="region"
         aria-roledescription="carousel"
         data-slot="carousel"
@@ -158,6 +163,7 @@ function CarouselItem({ className, ...props }: React.ComponentProps<'div'>) {
 
   return (
     <div
+      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- role="group" 是轮播项合法的 ARIA 语义，改用 fieldset 会改变布局与样式
       role="group"
       aria-roledescription="slide"
       data-slot="carousel-item"

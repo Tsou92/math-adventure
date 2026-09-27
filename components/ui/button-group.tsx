@@ -29,6 +29,7 @@ function ButtonGroup({
 }: React.ComponentProps<'div'> & VariantProps<typeof buttonGroupVariants>) {
   return (
     <div
+      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- role="group" 是按钮组合法的 ARIA 语义，改用 fieldset 会改变布局与样式
       role="group"
       data-slot="button-group"
       data-orientation={orientation}

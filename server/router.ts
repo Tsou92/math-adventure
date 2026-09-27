@@ -1,14 +1,12 @@
-import { createHash, randomInt, randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { z } from 'zod';
+import { totalQuestions } from '../lib/questions.js';
 import {
-  makeQuestionsForCounts,
-  totalQuestions,
-  type QuestionCounts,
-} from '../lib/questions.js';
-import {
+  changePassword as changePasswordWithSession,
   createSession,
   currentUser,
+  deleteUserSessions,
   destroySession,
   hashPassword,
   normalizeUsername,
@@ -17,8 +15,16 @@ import {
   validateUsername,
   verifyPassword,
 } from './auth.js';
-import { db } from './db.js';
+import { db, withTransaction } from './db.js';
 import { body, method, routePath, send } from './http.js';
+import {
+  abandonRound,
+  createRound as createRoundService,
+  repeatRound,
+  saveAnswers,
+  startRound,
+  submitRound,
+} from './round-service.js';
 
 type Row = Record<string, unknown>;
 type LoginAttemptRow = {
@@ -31,15 +37,6 @@ type LoginUserRow = Row & {
   password_hash: string;
   is_active: boolean;
 };
-type AnswerRow = Row & {
-  id: string;
-  expression: string;
-  correct_answer: number;
-  level: string;
-  answer_text: string | null;
-  prompt_data: unknown;
-};
-
 function promptData(value: unknown) {
   if (!value) return {};
   if (typeof value === 'string') {
@@ -50,16 +47,6 @@ function promptData(value: unknown) {
     }
   }
   return value as Record<string, unknown>;
-}
-
-function questionKey(level: string, expression: string, answer: number) {
-  const normalized = expression
-    .normalize('NFKC')
-    .replaceAll('-', '−')
-    .replace(/\s/g, '');
-  return createHash('sha256')
-    .update(['2', level, normalized, String(answer)].join('\u001f'))
-    .digest('hex');
 }
 
 export async function fetchChildrenSummary(familyId: string) {
@@ -148,11 +135,21 @@ async function login(req: VercelRequest, res: VercelResponse) {
       ON CONFLICT (bucket) DO UPDATE SET
         attempt_count = CASE WHEN kousuan.login_attempts.window_started_at < now() - interval '15 minutes' THEN 1 ELSE kousuan.login_attempts.attempt_count + 1 END,
         window_started_at = CASE WHEN kousuan.login_attempts.window_started_at < now() - interval '15 minutes' THEN now() ELSE kousuan.login_attempts.window_started_at END,
-        blocked_until = CASE WHEN kousuan.login_attempts.attempt_count + 1 >= 6 THEN now() + interval '10 minutes' ELSE NULL END`;
+        blocked_until = CASE
+          WHEN kousuan.login_attempts.window_started_at < now() - interval '15 minutes' THEN NULL
+          WHEN kousuan.login_attempts.attempt_count + 1 >= 6 THEN now() + interval '10 minutes'
+          ELSE NULL
+        END`;
     throw Object.assign(new Error('用户名或密码不正确'), { statusCode: 401 });
   }
   await sql`DELETE FROM kousuan.login_attempts WHERE bucket = ${bucket}`;
-  await createSession(String(user.id), req, res);
+  await createSession(
+    String(user.id),
+    req,
+    res,
+    withTransaction,
+    String(user.password_hash),
+  );
   return send(res, 200, { user: publicUser(user as never) });
 }
 
@@ -252,22 +249,15 @@ async function changePassword(req: VercelRequest, res: VercelResponse) {
   const parsed = z
     .object({ currentPassword: z.string(), newPassword: z.string() })
     .parse(body(req));
-  const rows =
-    (await db()`SELECT password_hash FROM kousuan.users WHERE id = ${user.id}`) as Row[];
-  if (
-    !(await verifyPassword(
-      String(rows[0]?.password_hash),
-      parsed.currentPassword,
-    ))
-  ) {
-    throw Object.assign(new Error('当前密码不正确'), { statusCode: 400 });
-  }
-  validatePassword(
-    parsed.newPassword,
-    user.role === 'child' ? 'child' : 'parent',
+  await changePasswordWithSession(
+    {
+      userId: user.id,
+      currentPassword: parsed.currentPassword,
+      newPassword: parsed.newPassword,
+    },
+    req,
+    res,
   );
-  const passwordHash = await hashPassword(parsed.newPassword);
-  await db()`UPDATE kousuan.users SET password_hash = ${passwordHash}, must_change_password = false, updated_at = now() WHERE id = ${user.id}`;
   return send(res, 200, { ok: true });
 }
 
@@ -323,11 +313,25 @@ async function childAction(
     const parsed = z.object({ password: z.string() }).parse(body(req));
     validatePassword(parsed.password, 'child');
     const passwordHash = await hashPassword(parsed.password);
-    await sql.transaction([
-      sql`UPDATE kousuan.users SET password_hash = ${passwordHash}, must_change_password = true, updated_at = now() WHERE id = ${childId}`,
-      sql`DELETE FROM kousuan.sessions WHERE user_id = ${childId}`,
-      sql`INSERT INTO kousuan.audit_events (family_id, actor_user_id, action, target_user_id) VALUES (${parent.family_id}, ${parent.id}, 'child.password_reset', ${childId})`,
-    ]);
+    await withTransaction(async (tx) => {
+      const locked = await tx.query<{ id: string }>(
+        'SELECT id FROM kousuan.users WHERE id = $1 AND family_id = $2 AND role = $3 FOR UPDATE',
+        [childId, parent.family_id, 'child'],
+      );
+      if (!locked.rows[0])
+        throw Object.assign(new Error('孩子账号不存在'), { statusCode: 404 });
+      await tx.query(
+        `UPDATE kousuan.users SET password_hash = $2, must_change_password = true, updated_at = now()
+          WHERE id = $1`,
+        [childId, passwordHash],
+      );
+      await deleteUserSessions(tx, childId);
+      await tx.query(
+        `INSERT INTO kousuan.audit_events (family_id, actor_user_id, action, target_user_id)
+          VALUES ($1, $2, 'child.password_reset', $3)`,
+        [parent.family_id, parent.id, childId],
+      );
+    });
     return send(res, 200, { ok: true });
   }
   const parsed = z.object({ isActive: z.boolean() }).parse(body(req));
@@ -406,40 +410,14 @@ async function createRound(req: VercelRequest, res: VercelResponse) {
       idempotencyKey: z.uuid(),
     })
     .parse(body(req));
-  const sql = db();
-  const duplicate =
-    (await sql`SELECT id FROM kousuan.practice_rounds WHERE user_id = ${user.id} AND idempotency_key = ${input.idempotencyKey}`) as Row[];
-  if (duplicate[0])
-    return send(res, 200, {
-      round: await fetchRound(user.id, String(duplicate[0].id)),
-    });
-  const active =
-    (await sql`SELECT id FROM kousuan.practice_rounds WHERE user_id = ${user.id} AND status IN ('generated', 'started') LIMIT 1`) as Row[];
-  if (active[0])
-    throw Object.assign(new Error('你还有一轮练习没有完成'), {
-      statusCode: 409,
-      activeRoundId: active[0].id,
-    });
-
-  const counts: QuestionCounts = input.counts;
-  const packageName = '自选知识点练习';
-  const challengerChain = input.challengerChain;
-  const roundId = randomUUID();
-  const seed = randomInt(1, 2_000_000_000);
-  const generated = makeQuestionsForCounts(seed, counts, { challengerChain });
-  const statements = [
-    sql`INSERT INTO kousuan.practice_rounds (id, user_id, family_id, idempotency_key, source, package_name, starter_count, explorer_count, challenger_count, multiply_meaning_count, multiply_facts_count, abacus_move_count, abacus_match_count, abacus_calculation_count, total_count, seed)
-      VALUES (${roundId}, ${user.id}, ${user.family_id}, ${input.idempotencyKey}, ${input.source}, ${packageName}, ${counts.starter}, ${counts.explorer}, ${counts.challenger}, ${counts.multiplyMeaning}, ${counts.multiplyFacts}, ${counts.abacusMove}, ${counts.abacusMatch}, ${counts.abacusCalculation}, ${generated.length}, ${seed})`,
-    ...generated.map(
-      (
-        question,
-        index,
-      ) => sql`INSERT INTO kousuan.round_questions (round_id, position, level, expression, correct_answer, prompt_data)
-      VALUES (${roundId}, ${index + 1}, ${question.level}, ${question.expression}, ${question.answer}, ${JSON.stringify(question.promptData ?? {})}::jsonb)`,
-    ),
-  ];
-  await sql.transaction(statements);
-  return send(res, 201, { round: await fetchRound(user.id, roundId) });
+  const outcome = await createRoundService(user.id, {
+    counts: input.counts,
+    challengerChain: input.challengerChain,
+    idempotencyKey: input.idempotencyKey,
+  });
+  return send(res, outcome.existing ? 200 : 201, {
+    round: await fetchRound(user.id, outcome.roundId),
+  });
 }
 
 async function activeRound(req: VercelRequest, res: VercelResponse) {
@@ -459,14 +437,9 @@ async function roundAction(
   action: string,
 ) {
   const user = await requireUser(req, ['child']);
-  const sql = db();
   if (action === 'start') {
     method(req, 'POST');
-    const rows =
-      (await sql`UPDATE kousuan.practice_rounds SET status = 'started', started_at = coalesce(started_at, now())
-      WHERE id = ${roundId} AND user_id = ${user.id} AND status IN ('generated', 'started') RETURNING id`) as Row[];
-    if (!rows[0])
-      throw Object.assign(new Error('这轮练习无法开始'), { statusCode: 409 });
+    await startRound(user.id, roundId);
     return send(res, 200, { round: await fetchRound(user.id, roundId) });
   }
   if (action === 'answers') {
@@ -484,158 +457,29 @@ async function roundAction(
           .max(100),
       })
       .parse(body(req));
-    const roundRows =
-      (await sql`SELECT id FROM kousuan.practice_rounds WHERE id = ${roundId} AND user_id = ${user.id} AND status = 'started'`) as Row[];
-    if (!roundRows[0])
-      throw Object.assign(new Error('这轮练习不在答题中'), { statusCode: 409 });
-    const allowed =
-      (await sql`SELECT id FROM kousuan.round_questions WHERE round_id = ${roundId}`) as Row[];
-    const allowedIds = new Set(allowed.map((row) => String(row.id)));
-    if (parsed.answers.some((answer) => !allowedIds.has(answer.questionId)))
-      throw Object.assign(new Error('答案中包含无效题目'), { statusCode: 400 });
-    const saved: Array<{
-      questionId: string;
-      answerText: string;
-      clientVersion: number;
-    }> = [];
-    for (const answer of parsed.answers) {
-      const rows =
-        (await sql`INSERT INTO kousuan.practice_answers (question_id, round_id, answer_text, client_version, updated_at)
-        VALUES (${answer.questionId}, ${roundId}, ${answer.answer}, ${answer.clientVersion}, now())
-        ON CONFLICT (question_id) DO UPDATE SET
-          answer_text = excluded.answer_text,
-          client_version = excluded.client_version,
-          updated_at = now()
-        WHERE kousuan.practice_answers.client_version < excluded.client_version
-          OR (kousuan.practice_answers.client_version = excluded.client_version
-            AND kousuan.practice_answers.answer_text = excluded.answer_text)
-        RETURNING answer_text, client_version`) as Row[];
-      if (!rows[0]) {
-        const current =
-          (await sql`SELECT answer_text, client_version FROM kousuan.practice_answers WHERE question_id = ${answer.questionId}`) as Row[];
-        throw Object.assign(
-          new Error('答案已在另一页面或设备更新，请确认后再试'),
-          {
-            statusCode: 409,
-            details: {
-              code: 'ANSWER_VERSION_STALE',
-              questionId: answer.questionId,
-              answerText:
-                typeof current[0]?.answer_text === 'string'
-                  ? current[0].answer_text
-                  : '',
-              clientVersion: Number(current[0]?.client_version ?? 0),
-            },
-          },
-        );
-      }
-      saved.push({
-        questionId: answer.questionId,
-        answerText: String(rows[0].answer_text),
-        clientVersion: Number(rows[0].client_version),
-      });
-    }
+    const { saved } = await saveAnswers(user.id, roundId, parsed.answers);
     return send(res, 200, { ok: true, saved });
   }
   if (action === 'submit') {
     method(req, 'POST');
-    const rows =
-      (await sql`SELECT q.id, q.expression, q.correct_answer, q.level, q.prompt_data, a.answer_text
-      FROM kousuan.round_questions q LEFT JOIN kousuan.practice_answers a ON a.question_id = q.id
-      JOIN kousuan.practice_rounds r ON r.id = q.round_id
-      WHERE q.round_id = ${roundId} AND r.user_id = ${user.id} AND r.status = 'started'
-      ORDER BY q.position`) as AnswerRow[];
-    if (!rows.length)
-      throw Object.assign(new Error('这轮练习不在答题中'), { statusCode: 409 });
-    if (
-      rows.some(
-        (row) =>
-          row.answer_text === null || String(row.answer_text).trim() === '',
-      )
-    )
-      throw Object.assign(new Error('请答完所有题目再交卷'), {
-        statusCode: 400,
-      });
-    const correct = rows.filter(
-      (row) => Number(row.answer_text) === Number(row.correct_answer),
-    );
-    const score = Math.round((correct.length / rows.length) * 100);
-    const statements = rows.map(
-      (row) =>
-        sql`UPDATE kousuan.practice_answers SET is_correct = ${Number(row.answer_text) === Number(row.correct_answer)} WHERE question_id = ${row.id}`,
-    );
-    for (const row of rows.filter(
-      (item) => Number(item.answer_text) !== Number(item.correct_answer),
-    )) {
-      const key = questionKey(
-        String(row.level),
-        String(row.expression),
-        Number(row.correct_answer),
-      );
-      statements.push(sql`INSERT INTO kousuan.wrong_question_stats (user_id, expression, correct_answer, level, last_answer, prompt_data, question_key)
-        VALUES (${user.id}, ${String(row.expression)}, ${Number(row.correct_answer)}, ${String(row.level)}, ${String(row.answer_text)}, ${JSON.stringify(promptData(row.prompt_data))}::jsonb, ${key})
-        ON CONFLICT (user_id, question_key) DO UPDATE SET mistake_count = kousuan.wrong_question_stats.mistake_count + 1, last_answer = excluded.last_answer, level = excluded.level, prompt_data = excluded.prompt_data, last_seen_at = now()`);
-    }
-    statements.push(sql`UPDATE kousuan.practice_rounds SET status = 'completed', score = ${score}, correct_count = ${correct.length}, completed_at = now(), duration_seconds = greatest(0, extract(epoch from (now() - started_at))::int)
-      WHERE id = ${roundId} AND user_id = ${user.id} AND status = 'started'`);
-    await sql.transaction(statements);
-    const result =
-      (await sql`SELECT score, correct_count, total_count, duration_seconds, completed_at FROM kousuan.practice_rounds WHERE id = ${roundId}`) as Row[];
+    const outcome = await submitRound(user.id, roundId);
     return send(res, 200, {
-      result: result[0],
+      result: outcome.result,
       round: await fetchRound(user.id, roundId),
     });
   }
   if (action === 'abandon') {
     method(req, 'POST');
-    const rows =
-      (await sql`UPDATE kousuan.practice_rounds SET status = 'abandoned', abandoned_at = now()
-      WHERE id = ${roundId} AND user_id = ${user.id} AND status IN ('generated', 'started') RETURNING id`) as Row[];
-    if (!rows[0])
-      throw Object.assign(new Error('这轮练习已经结束'), { statusCode: 409 });
+    await abandonRound(user.id, roundId);
     return send(res, 200, { ok: true });
   }
   if (action === 'repeat') {
     method(req, 'POST');
     const parsed = z.object({ idempotencyKey: z.uuid() }).parse(body(req));
-    const source =
-      (await sql`SELECT * FROM kousuan.practice_rounds WHERE id = ${roundId} AND user_id = ${user.id} AND status = 'completed'`) as Row[];
-    if (!source[0])
-      throw Object.assign(new Error('只能重练已完成的练习'), {
-        statusCode: 409,
-      });
-    const active =
-      (await sql`SELECT id FROM kousuan.practice_rounds WHERE user_id = ${user.id} AND status IN ('generated', 'started') LIMIT 1`) as Row[];
-    if (active[0])
-      throw Object.assign(new Error('请先完成当前练习'), { statusCode: 409 });
-    const counts: QuestionCounts = {
-      starter: Number(source[0].starter_count),
-      explorer: Number(source[0].explorer_count),
-      challenger: Number(source[0].challenger_count),
-      multiplyMeaning: Number(source[0].multiply_meaning_count),
-      multiplyFacts: Number(source[0].multiply_facts_count),
-      abacusMove: Number(source[0].abacus_move_count),
-      abacusMatch: Number(source[0].abacus_match_count),
-      abacusCalculation: Number(source[0].abacus_calculation_count),
-    };
-    const sourceQuestions =
-      (await sql`SELECT expression FROM kousuan.round_questions WHERE round_id = ${roundId} AND level = 'challenger'`) as Row[];
-    const challengerChain = sourceQuestions.some(
-      (question) =>
-        (String(question.expression).match(/[+−]/g) ?? []).length > 1,
-    );
-    const newId = randomUUID();
-    const seed = randomInt(1, 2_000_000_000);
-    const generated = makeQuestionsForCounts(seed, counts, { challengerChain });
-    await sql.transaction([
-      sql`INSERT INTO kousuan.practice_rounds (id, user_id, family_id, idempotency_key, source, package_name, starter_count, explorer_count, challenger_count, multiply_meaning_count, multiply_facts_count, abacus_move_count, abacus_match_count, abacus_calculation_count, total_count, seed)
-        VALUES (${newId}, ${user.id}, ${user.family_id}, ${parsed.idempotencyKey}, 'repeat', ${`${String(source[0].package_name)}·再练一次`}, ${counts.starter}, ${counts.explorer}, ${counts.challenger}, ${counts.multiplyMeaning}, ${counts.multiplyFacts}, ${counts.abacusMove}, ${counts.abacusMatch}, ${counts.abacusCalculation}, ${generated.length}, ${seed})`,
-      ...generated.map(
-        (question, index) =>
-          sql`INSERT INTO kousuan.round_questions (round_id, position, level, expression, correct_answer, prompt_data) VALUES (${newId}, ${index + 1}, ${question.level}, ${question.expression}, ${question.answer}, ${JSON.stringify(question.promptData ?? {})}::jsonb)`,
-      ),
-    ]);
-    return send(res, 201, { round: await fetchRound(user.id, newId) });
+    const outcome = await repeatRound(user.id, roundId, parsed.idempotencyKey);
+    return send(res, outcome.existing ? 200 : 201, {
+      round: await fetchRound(user.id, outcome.roundId),
+    });
   }
   throw Object.assign(new Error('接口不存在'), { statusCode: 404 });
 }
@@ -718,17 +562,21 @@ export async function handleApi(req: VercelRequest, res: VercelResponse) {
     if (path === 'wrong-book') return await wrongBook(req, res);
     return send(res, 404, { error: '接口不存在' });
   } catch (error) {
+    const status =
+      error instanceof z.ZodError
+        ? 400
+        : Number((error as { statusCode?: number })?.statusCode ?? 500);
+    if (status >= 500) {
+      // 记录服务端错误；对外只返回统一文案，不泄露数据库或内部细节。
+      console.error('[api] 服务端错误', error);
+      return send(res, 500, { error: '服务暂时不可用' });
+    }
     const issue =
       error instanceof z.ZodError
         ? error.issues[0]?.message
         : error instanceof Error
           ? error.message
           : '服务暂时不可用';
-    const status =
-      error instanceof z.ZodError
-        ? 400
-        : Number((error as { statusCode?: number })?.statusCode ?? 500);
-    if (status >= 500) console.error(error);
     return send(res, status, {
       error: issue,
       ...(((error as { details?: Record<string, unknown> })?.details ??

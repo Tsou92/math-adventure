@@ -76,6 +76,7 @@ function Field({
 }: React.ComponentProps<'div'> & VariantProps<typeof fieldVariants>) {
   return (
     <div
+      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- Field 是通用容器，role="group" 是合法 ARIA 语义，改用 fieldset 会改变布局与样式
       role="group"
       data-slot="field"
       data-orientation={orientation}
