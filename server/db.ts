@@ -1,6 +1,11 @@
-import { Client, neon, neonConfig } from '@neondatabase/serverless';
+import {
+  Client,
+  neon,
+  neonConfig,
+  type NeonQueryFunction,
+} from '@neondatabase/serverless';
 
-let client: ReturnType<typeof neon> | undefined;
+let client: NeonQueryFunction<false, false> | undefined;
 
 /**
  * 原有 Neon HTTP 查询入口，读查询与旧脚本继续使用，不参与事务。

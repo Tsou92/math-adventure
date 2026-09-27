@@ -1,4 +1,4 @@
-import type { Level, QuestionCounts, QuestionPrompt } from '@/lib/questions';
+import type { Level, QuestionCounts, QuestionPrompt } from './questions';
 
 export type User = {
   id: string;
@@ -7,7 +7,6 @@ export type User = {
   role: 'parent' | 'site_owner' | 'child';
   mustChangePassword: boolean;
 };
-
 export type RoundQuestion = {
   id: string;
   position: number;
@@ -19,12 +18,10 @@ export type RoundQuestion = {
   isCorrect?: boolean;
   correctAnswer?: number;
 };
-
-export type RoundStatus = 'generated' | 'started' | 'completed';
-
 export type Round = {
+  mode: 'practice' | 'challenge';
   id: string;
-  status: RoundStatus;
+  status: 'generated' | 'started' | 'completed';
   source: string;
   packageName: string;
   counts: QuestionCounts;
@@ -34,8 +31,8 @@ export type Round = {
   challengerChain: boolean;
   questions: RoundQuestion[];
 };
-
 export type RecordItem = {
+  mode?: 'practice' | 'challenge';
   id: string;
   package_name: string;
   starter_count: number;
@@ -43,6 +40,7 @@ export type RecordItem = {
   challenger_count: number;
   multiply_meaning_count: number;
   multiply_facts_count: number;
+  multiply_mixed_count: number;
   abacus_move_count: number;
   abacus_match_count: number;
   abacus_calculation_count: number;
@@ -54,7 +52,6 @@ export type RecordItem = {
   completed_at: string;
   questions: RoundQuestion[];
 };
-
 export type WrongItem = {
   id: string;
   expression: string;
@@ -64,8 +61,12 @@ export type WrongItem = {
   last_answer: string;
   last_seen_at: string;
   prompt_data?: QuestionPrompt;
+  review_count: number;
+  correct_streak: number;
+  last_reviewed_at: string | null;
+  next_review_at: string | null;
+  mastered_at: string | null;
 };
-
 export type ChildItem = {
   id: string;
   username: string;
@@ -76,7 +77,6 @@ export type ChildItem = {
   average_score: number;
   last_practiced_at: string | null;
 };
-
 export type LegacyRecord = {
   id: string;
   completedAt: string;
@@ -84,11 +84,38 @@ export type LegacyRecord = {
   score: number;
   correctCount: number;
 };
-
 export type CreateRoundInput = {
   source: 'custom';
   counts: QuestionCounts;
   challengerChain: boolean;
+  mode: 'practice' | 'challenge';
 };
 
-export type AnswerMap = Record<string, string>;
+export type LearningPreferences = {
+  counts: QuestionCounts;
+  challengerChain: boolean;
+  mode: 'practice' | 'challenge';
+};
+
+export type TopicProgress = {
+  level: Level;
+  attempted: number;
+  correct: number;
+  recent_accuracy: number | null;
+  previous_accuracy: number | null;
+};
+export type LearningProgress = {
+  topics: TopicProgress[];
+  summary: {
+    rounds: number;
+    questions: number;
+    correct: number;
+    practice_days: number;
+  };
+  recent: Array<{
+    completed_at: string;
+    total_count: number;
+    correct_count: number;
+    mode: string;
+  }>;
+};

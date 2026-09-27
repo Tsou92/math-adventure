@@ -4,6 +4,7 @@ export type Level =
   | 'challenger'
   | 'multiplyMeaning'
   | 'multiplyFacts'
+  | 'multiplyMixed'
   | 'abacusMove'
   | 'abacusMatch'
   | 'abacusCalculation';
@@ -277,6 +278,30 @@ export function makeQuestionsForCounts(
     });
   }
 
+  const usedMixed = new Set<string>();
+  const mixedStartsWithAddition = counts.multiplyMixed > 0 && random() > 0.5;
+  while (usedMixed.size < counts.multiplyMixed) {
+    const left = int(2, 9);
+    const right = int(2, 9);
+    const product = left * right;
+    const isAddition = (usedMixed.size % 2 === 0) === mixedStartsWithAddition;
+    if (!isAddition && product <= 10) continue;
+    const operand = int(10, isAddition ? 100 - product : product - 1);
+    const crossesTen = isAddition
+      ? (product % 10) + (operand % 10) >= 10
+      : product % 10 < operand % 10;
+    if (!crossesTen) continue;
+    const expression = `${left} × ${right} ${isAddition ? '+' : '−'} ${operand}`;
+    if (usedMixed.has(expression)) continue;
+    usedMixed.add(expression);
+    questions.push({
+      id: `multiplyMixed-${usedMixed.size}`,
+      level: 'multiplyMixed',
+      expression,
+      answer: isAddition ? product + operand : product - operand,
+    });
+  }
+
   const usedMoves = new Set<string>();
   const moveQuota = weightedQuota(counts.abacusMove);
   const moveKinds: Array<'crossFive' | 'crossTen' | 'regular'> = [];
@@ -407,6 +432,7 @@ export function makeQuestions(seed: number): Question[] {
       challenger: 10,
       multiplyMeaning: 0,
       multiplyFacts: 0,
+      multiplyMixed: 0,
       abacusMove: 0,
       abacusMatch: 0,
       abacusCalculation: 0,

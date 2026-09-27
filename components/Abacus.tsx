@@ -23,6 +23,13 @@ function AbacusRod({
   onChange: (rod: AbacusRodState) => void;
 }) {
   const digit = (rod.upperActive ? 5 : 0) + rod.lowerActiveCount;
+  const upperTop = rod.upperActive
+    ? interactive
+      ? 59
+      : 31
+    : interactive
+      ? 14
+      : 7;
   return (
     <span className="abacus-rod" aria-label={`${label}，当前为 ${digit}`}>
       <span className="abacus-stick" />
@@ -30,14 +37,14 @@ function AbacusRod({
         <button
           type="button"
           className={`abacus-bead abacus-upper ${rod.upperActive ? 'active' : ''}`}
-          style={{ top: rod.upperActive ? 31 : 7 }}
+          style={{ top: upperTop }}
           aria-label={`${label}上珠，点击后${rod.upperActive ? '离梁' : '靠梁'}`}
           onClick={() => onChange(toggleUpper(rod))}
         />
       ) : (
         <span
           className={`abacus-bead abacus-upper ${rod.upperActive ? 'active' : ''}`}
-          style={{ top: rod.upperActive ? 31 : 7 }}
+          style={{ top: upperTop }}
           aria-hidden="true"
         />
       )}
@@ -50,7 +57,7 @@ function AbacusRod({
           <button
             type="button"
             className={`abacus-bead abacus-lower ${active ? 'active' : ''}`}
-            style={{ top }}
+            style={{ top: interactive ? top * 2 : top }}
             key={beadNumber}
             aria-label={`${label}第 ${beadNumber} 颗下珠，点击后调整靠梁珠数`}
             onClick={() => onChange(selectLower(rod, beadNumber))}
@@ -58,7 +65,7 @@ function AbacusRod({
         ) : (
           <span
             className={`abacus-bead abacus-lower ${active ? 'active' : ''}`}
-            style={{ top }}
+            style={{ top: interactive ? top * 2 : top }}
             key={beadNumber}
             aria-hidden="true"
           />
@@ -91,7 +98,7 @@ export function Abacus({
   };
   return (
     <span
-      className={`abacus-wrap ${compact ? 'compact' : ''}`}
+      className={`abacus-wrap ${compact ? 'compact' : ''} ${interactive ? 'interactive' : ''}`}
       aria-label={`${label}，当前表示 ${value}`}
     >
       <span className="abacus-frame">

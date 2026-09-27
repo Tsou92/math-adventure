@@ -43,7 +43,7 @@ describe('handleApi 统一错误处理', () => {
     );
 
     const res = {};
-    await handleApi({} as never, res as never);
+    await handleApi({ method: 'GET', headers: {} } as never, res as never);
 
     expect(httpState.send).toHaveBeenCalledWith(res, 500, {
       error: '服务暂时不可用',
@@ -58,7 +58,7 @@ describe('handleApi 统一错误处理', () => {
     );
 
     const res = {};
-    await handleApi({} as never, res as never);
+    await handleApi({ method: 'GET', headers: {} } as never, res as never);
 
     expect(httpState.send).toHaveBeenCalledWith(res, 401, {
       error: '请先登录',

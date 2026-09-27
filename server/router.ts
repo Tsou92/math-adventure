@@ -16,6 +16,15 @@ import {
   verifyPassword,
 } from './auth.js';
 import { db, withTransaction } from './db.js';
+import { preferences, progress, reviewWrong } from './learning.js';
+import {
+  createRecoveryCode,
+  recoveryHash,
+  issueRecovery,
+  recoverPassword,
+} from './recovery.js';
+import { getQuestionHints } from '../lib/learning.js';
+import type { Level } from '../lib/questions.js';
 import { body, method, routePath, send } from './http.js';
 import {
   abandonRound,
@@ -66,6 +75,7 @@ const countSchema = z
     challenger: z.number().int().min(0).max(50),
     multiplyMeaning: z.number().int().min(0).max(50),
     multiplyFacts: z.number().int().min(0).max(50),
+    multiplyMixed: z.number().int().min(0).max(50).default(0),
     abacusMove: z.number().int().min(0).max(50),
     abacusMatch: z.number().int().min(0).max(50),
     abacusCalculation: z.number().int().min(0).max(50),
@@ -160,13 +170,13 @@ async function register(req: VercelRequest, res: VercelResponse) {
       familyName: z
         .string()
         .trim()
-        .min(1, '请输入家庭名称')
-        .max(30, '家庭名称最多 30 个字'),
+        .max(30, '家庭名称最多 30 个字')
+        .default('我的家庭'),
       displayName: z
         .string()
         .trim()
-        .min(1, '请输入家长称呼')
-        .max(20, '家长称呼最多 20 个字'),
+        .max(20, '家长称呼最多 20 个字')
+        .default('家长'),
       username: z.string().min(1, '请输入用户名'),
       password: z.string().min(1, '请输入密码'),
     })
@@ -214,6 +224,7 @@ async function register(req: VercelRequest, res: VercelResponse) {
         ELSE kousuan.login_attempts.blocked_until
       END`;
 
+  const recoveryCode = createRecoveryCode();
   const familyId = randomUUID();
   const userId = randomUUID();
   try {
@@ -223,6 +234,7 @@ async function register(req: VercelRequest, res: VercelResponse) {
         VALUES (${userId}, ${familyId}, ${username}, ${parsed.displayName}, ${passwordHash}, 'parent')`,
       sql`INSERT INTO kousuan.audit_events (family_id, actor_user_id, action, target_user_id)
         VALUES (${familyId}, ${userId}, 'family.registered', ${userId})`,
+      sql`INSERT INTO kousuan.recovery_codes(user_id,code_hash) VALUES(${userId},${recoveryHash(recoveryCode)})`,
     ]);
   } catch (error) {
     if (String(error).includes('users_username_key')) {
@@ -233,6 +245,7 @@ async function register(req: VercelRequest, res: VercelResponse) {
 
   await createSession(userId, req, res);
   return send(res, 201, {
+    recoveryCode,
     user: {
       id: userId,
       username,
@@ -306,9 +319,17 @@ async function childAction(
   const parent = await requireUser(req, ['parent', 'site_owner']);
   const sql = db();
   const childRows =
-    (await sql`SELECT id FROM kousuan.users WHERE id = ${childId} AND family_id = ${parent.family_id} AND role = 'child'`) as Row[];
+    (await sql`SELECT id, family_id, username, display_name, role, is_active, must_change_password FROM kousuan.users WHERE id = ${childId} AND family_id = ${parent.family_id} AND role = 'child'`) as Row[];
   if (!childRows[0])
     throw Object.assign(new Error('孩子账号不存在'), { statusCode: 404 });
+  if (action === 'enter') {
+    if (!childRows[0].is_active)
+      throw Object.assign(new Error('请先启用孩子账号'), { statusCode: 403 });
+    await sql`INSERT INTO kousuan.audit_events(family_id,actor_user_id,target_user_id,action) VALUES(${parent.family_id},${parent.id},${childId},'parent.entered_child')`;
+    await destroySession(req, res);
+    await createSession(childId, req, res);
+    return send(res, 200, { user: publicUser(childRows[0] as never) });
+  }
   if (action === 'reset-password') {
     const parsed = z.object({ password: z.string() }).parse(body(req));
     validatePassword(parsed.password, 'child');
@@ -354,6 +375,7 @@ function serializeRound(round: Row, questions: Row[]) {
   return {
     id: round.id,
     status: round.status,
+    mode: round.mode ?? 'challenge',
     source: round.source,
     packageName: round.package_name,
     counts: {
@@ -362,6 +384,7 @@ function serializeRound(round: Row, questions: Row[]) {
       challenger: round.challenger_count,
       multiplyMeaning: round.multiply_meaning_count,
       multiplyFacts: round.multiply_facts_count,
+      multiplyMixed: round.multiply_mixed_count ?? 0,
       abacusMove: round.abacus_move_count,
       abacusMatch: round.abacus_match_count,
       abacusCalculation: round.abacus_calculation_count,
@@ -407,11 +430,13 @@ async function createRound(req: VercelRequest, res: VercelResponse) {
       source: z.literal('custom'),
       counts: countSchema,
       challengerChain: z.boolean().default(false),
+      mode: z.enum(['practice', 'challenge']).default('challenge'),
       idempotencyKey: z.uuid(),
     })
     .parse(body(req));
   const outcome = await createRoundService(user.id, {
     counts: input.counts,
+    mode: input.mode,
     challengerChain: input.challengerChain,
     idempotencyKey: input.idempotencyKey,
   });
@@ -441,6 +466,28 @@ async function roundAction(
     method(req, 'POST');
     await startRound(user.id, roundId);
     return send(res, 200, { round: await fetchRound(user.id, roundId) });
+  }
+  if (action === 'check') {
+    method(req, 'POST');
+    const sql = db();
+    const parsed = z
+      .object({ questionId: z.uuid(), answer: z.string().regex(/^-?\d{1,4}$/) })
+      .parse(body(req));
+    const rows =
+      await sql`SELECT q.expression, q.level, q.correct_answer FROM kousuan.round_questions q
+      JOIN kousuan.practice_rounds r ON r.id=q.round_id WHERE q.id=${parsed.questionId} AND r.id=${roundId}
+      AND r.user_id=${user.id} AND r.status='started' AND r.mode='practice'`;
+    if (!rows[0])
+      throw Object.assign(new Error('只有练习模式可以逐题检查'), {
+        statusCode: 403,
+      });
+    return send(res, 200, {
+      correct: Number(rows[0].correct_answer) === Number(parsed.answer),
+      hints: getQuestionHints({
+        expression: String(rows[0].expression),
+        level: rows[0].level as Level,
+      }),
+    });
   }
   if (action === 'answers') {
     method(req, 'PATCH');
@@ -489,9 +536,9 @@ async function records(req: VercelRequest, res: VercelResponse) {
   const user = await requireUser(req, ['child']);
   const rows = await db()`WITH recent AS (
       SELECT id, package_name, starter_count, explorer_count, challenger_count,
-        multiply_meaning_count, multiply_facts_count, abacus_move_count,
+        multiply_meaning_count, multiply_facts_count, multiply_mixed_count, abacus_move_count,
         abacus_match_count, abacus_calculation_count, total_count,
-        score, correct_count, duration_seconds, started_at, completed_at
+        score, correct_count, duration_seconds, started_at, completed_at, mode
       FROM kousuan.practice_rounds
       WHERE user_id = ${user.id} AND status = 'completed'
       ORDER BY completed_at DESC
@@ -513,10 +560,10 @@ async function records(req: VercelRequest, res: VercelResponse) {
     LEFT JOIN kousuan.round_questions q ON q.round_id = recent.id
     LEFT JOIN kousuan.practice_answers a ON a.question_id = q.id
     GROUP BY recent.id, recent.package_name, recent.starter_count, recent.explorer_count,
-      recent.challenger_count, recent.multiply_meaning_count, recent.multiply_facts_count,
+      recent.challenger_count, recent.multiply_meaning_count, recent.multiply_facts_count, recent.multiply_mixed_count,
       recent.abacus_move_count, recent.abacus_match_count, recent.abacus_calculation_count,
       recent.total_count, recent.score, recent.correct_count,
-      recent.duration_seconds, recent.started_at, recent.completed_at
+      recent.duration_seconds, recent.started_at, recent.completed_at, recent.mode
     ORDER BY recent.completed_at DESC`;
   return send(res, 200, { records: rows });
 }
@@ -525,14 +572,32 @@ async function wrongBook(req: VercelRequest, res: VercelResponse) {
   method(req, 'GET');
   const user = await requireUser(req, ['child']);
   const rows =
-    await db()`SELECT id, expression, correct_answer, level, mistake_count, last_answer, last_seen_at, prompt_data
-    FROM kousuan.wrong_question_stats WHERE user_id = ${user.id} ORDER BY last_seen_at DESC LIMIT 200`;
+    await db()`SELECT id, expression, correct_answer, level, mistake_count, last_answer, last_seen_at, prompt_data, review_count, correct_streak, last_reviewed_at, next_review_at, mastered_at
+    FROM kousuan.wrong_question_stats WHERE user_id = ${user.id} ORDER BY mastered_at NULLS FIRST, next_review_at ASC NULLS FIRST, last_seen_at DESC LIMIT 200`;
   return send(res, 200, { wrongQuestions: rows });
 }
 
 export async function handleApi(req: VercelRequest, res: VercelResponse) {
   try {
     const path = routePath(req);
+    if (req.method !== 'GET' && req.headers.origin) {
+      const origin = new URL(String(req.headers.origin));
+      if (origin.host !== req.headers.host)
+        throw Object.assign(new Error('请求来源不正确'), { statusCode: 403 });
+    }
+    if (path === 'auth/recovery-code') return await issueRecovery(req, res);
+    if (path === 'auth/recover') return await recoverPassword(req, res);
+    if (path === 'learning/preferences') return await preferences(req, res);
+    if (path === 'learning/progress') return await progress(req, res);
+    const learningMatch = path.match(
+      /^parent\/children\/([0-9a-f-]+)\/(preferences|progress)$/,
+    );
+    if (learningMatch)
+      return learningMatch[2] === 'preferences'
+        ? await preferences(req, res, learningMatch[1])
+        : await progress(req, res, learningMatch[1]);
+    const reviewMatch = path.match(/^wrong-book\/([0-9a-f-]+)\/review$/);
+    if (reviewMatch) return await reviewWrong(req, res, reviewMatch[1]);
     if (path === 'auth/register') return await register(req, res);
     if (path === 'auth/login') return await login(req, res);
     if (path === 'auth/logout') {
@@ -545,16 +610,37 @@ export async function handleApi(req: VercelRequest, res: VercelResponse) {
       return send(res, 200, { user: publicUser(await currentUser(req)) });
     }
     if (path === 'auth/change-password') return await changePassword(req, res);
+    if (path === 'parent/profile') {
+      method(req, 'PUT');
+      const parent = await requireUser(req, ['parent', 'site_owner']);
+      const input = z
+        .object({
+          displayName: z.string().trim().min(1).max(20),
+          familyName: z.string().trim().max(30).optional(),
+        })
+        .parse(body(req));
+      await db().transaction([
+        db()`UPDATE kousuan.users SET display_name=${input.displayName},updated_at=now() WHERE id=${parent.id}`,
+        ...(input.familyName
+          ? [
+              db()`UPDATE kousuan.families SET name=${input.familyName} WHERE id=${parent.family_id}`,
+            ]
+          : []),
+      ]);
+      return send(res, 200, {
+        user: publicUser({ ...parent, display_name: input.displayName }),
+      });
+    }
     if (path === 'parent/children') return await children(req, res);
     const childMatch = path.match(
-      /^parent\/children\/([0-9a-f-]+)\/(reset-password|status)$/,
+      /^parent\/children\/([0-9a-f-]+)\/(reset-password|status|enter)$/,
     );
     if (childMatch)
       return await childAction(req, res, childMatch[1], childMatch[2]);
     if (path === 'rounds') return await createRound(req, res);
     if (path === 'rounds/active') return await activeRound(req, res);
     const roundMatch = path.match(
-      /^rounds\/([0-9a-f-]+)\/(start|answers|submit|repeat|abandon)$/,
+      /^rounds\/([0-9a-f-]+)\/(start|answers|submit|repeat|abandon|check)$/,
     );
     if (roundMatch)
       return await roundAction(req, res, roundMatch[1], roundMatch[2]);
@@ -578,7 +664,7 @@ export async function handleApi(req: VercelRequest, res: VercelResponse) {
           ? error.message
           : '服务暂时不可用';
     return send(res, status, {
-      error: issue,
+      error: status >= 500 ? '服务暂时不可用，请稍后重试' : issue,
       ...(((error as { details?: Record<string, unknown> })?.details ??
         {}) as Record<string, unknown>),
     });

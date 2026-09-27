@@ -1,7 +1,61 @@
 import { describe, expect, it } from 'vitest';
 import { makeQuestionsForCounts, normalizeQuestionCount } from './questions';
+import { emptyCounts } from './learning';
 
 describe('makeQuestionsForCounts', () => {
+  it('乘法后加减每题都进退位、加减均衡且最多50题不重复', () => {
+    for (let seed = 1; seed <= 100; seed++) {
+      const counts = { ...emptyCounts, multiplyMixed: 50 };
+      const questions = makeQuestionsForCounts(seed, counts);
+      expect(questions).toEqual(makeQuestionsForCounts(seed, counts));
+      expect(questions).toHaveLength(50);
+      expect(new Set(questions.map((q) => q.expression)).size).toBe(50);
+      expect(questions.filter((q) => q.expression.includes('+'))).toHaveLength(
+        25,
+      );
+      for (const question of questions) {
+        const parts = question.expression.match(
+          /^(\d+) × (\d+) ([+−]) (\d+)$/,
+        )!;
+        expect(parts).not.toBeNull();
+        const a = Number(parts[1]),
+          b = Number(parts[2]),
+          c = Number(parts[4]);
+        expect(question.level).toBe('multiplyMixed');
+        expect(a).toBeGreaterThanOrEqual(2);
+        expect(a).toBeLessThanOrEqual(9);
+        expect(b).toBeGreaterThanOrEqual(2);
+        expect(b).toBeLessThanOrEqual(9);
+        expect(c).toBeGreaterThanOrEqual(10);
+        expect(c).toBeLessThanOrEqual(99);
+        const product = a * b;
+        if (parts[3] === '+') {
+          expect((product % 10) + (c % 10)).toBeGreaterThanOrEqual(10);
+          expect(question.answer).toBe(product + c);
+        } else {
+          expect(product % 10).toBeLessThan(c % 10);
+          expect(question.answer).toBe(product - c);
+        }
+        expect(question.answer).toBeGreaterThan(0);
+        expect(question.answer).toBeLessThanOrEqual(100);
+      }
+    }
+  });
+
+  it('新题型支持零题、奇数题量和与其他题型混选', () => {
+    for (const count of [0, 1, 2, 49]) {
+      const questions = makeQuestionsForCounts(20260916, {
+        ...emptyCounts,
+        starter: 2,
+        multiplyMixed: count,
+      });
+      expect(questions).toHaveLength(count + 2);
+      expect(questions.filter((q) => q.level === 'multiplyMixed')).toHaveLength(
+        count,
+      );
+    }
+  });
+
   it('题量输入清空后可直接输入正常数字，不保留前导 0', () => {
     expect(normalizeQuestionCount('')).toBe(0);
     expect(normalizeQuestionCount('10')).toBe(10);
@@ -17,6 +71,7 @@ describe('makeQuestionsForCounts', () => {
       challenger: 13,
       multiplyMeaning: 9,
       multiplyFacts: 8,
+      multiplyMixed: 0,
       abacusMove: 0,
       abacusMatch: 0,
       abacusCalculation: 0,
@@ -57,6 +112,7 @@ describe('makeQuestionsForCounts', () => {
         challenger: 0,
         multiplyMeaning: 0,
         multiplyFacts: 0,
+        multiplyMixed: 0,
         abacusMove: 0,
         abacusMatch: 0,
         abacusCalculation: 0,
@@ -82,6 +138,7 @@ describe('makeQuestionsForCounts', () => {
         challenger: 0,
         multiplyMeaning: 0,
         multiplyFacts: 0,
+        multiplyMixed: 0,
         abacusMove: 0,
         abacusMatch: 0,
         abacusCalculation: 0,
@@ -114,6 +171,7 @@ describe('makeQuestionsForCounts', () => {
         challenger: 0,
         multiplyMeaning: 0,
         multiplyFacts: 0,
+        multiplyMixed: 0,
         abacusMove: 0,
         abacusMatch: 0,
         abacusCalculation: 0,
@@ -135,6 +193,7 @@ describe('makeQuestionsForCounts', () => {
       challenger: 50,
       multiplyMeaning: 0,
       multiplyFacts: 0,
+      multiplyMixed: 0,
       abacusMove: 0,
       abacusMatch: 0,
       abacusCalculation: 0,
@@ -161,6 +220,7 @@ describe('makeQuestionsForCounts', () => {
         challenger: 50,
         multiplyMeaning: 0,
         multiplyFacts: 0,
+        multiplyMixed: 0,
         abacusMove: 0,
         abacusMatch: 0,
         abacusCalculation: 0,
@@ -182,6 +242,7 @@ describe('makeQuestionsForCounts', () => {
       challenger: 0,
       multiplyMeaning: 50,
       multiplyFacts: 0,
+      multiplyMixed: 0,
       abacusMove: 0,
       abacusMatch: 0,
       abacusCalculation: 0,
@@ -230,6 +291,7 @@ describe('makeQuestionsForCounts', () => {
       challenger: 0,
       multiplyMeaning: 0,
       multiplyFacts: 50,
+      multiplyMixed: 0,
       abacusMove: 0,
       abacusMatch: 0,
       abacusCalculation: 0,
@@ -255,6 +317,7 @@ describe('makeQuestionsForCounts', () => {
       challenger: 0,
       multiplyMeaning: 0,
       multiplyFacts: 0,
+      multiplyMixed: 0,
       abacusMove: 50,
       abacusMatch: 0,
       abacusCalculation: 0,
@@ -299,6 +362,7 @@ describe('makeQuestionsForCounts', () => {
         challenger: 0,
         multiplyMeaning: 0,
         multiplyFacts: 0,
+        multiplyMixed: 0,
         abacusMove: 0,
         abacusMatch: count,
         abacusCalculation: 0,
@@ -334,6 +398,7 @@ describe('makeQuestionsForCounts', () => {
         challenger: 0,
         multiplyMeaning: 0,
         multiplyFacts: 0,
+        multiplyMixed: 0,
         abacusMove: 0,
         abacusMatch: 1,
         abacusCalculation: 0,
@@ -348,6 +413,7 @@ describe('makeQuestionsForCounts', () => {
       challenger: 0,
       multiplyMeaning: 0,
       multiplyFacts: 0,
+      multiplyMixed: 0,
       abacusMove: 0,
       abacusMatch: 0,
       abacusCalculation: 50,

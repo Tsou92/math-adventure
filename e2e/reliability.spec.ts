@@ -7,6 +7,17 @@ const user = {
   role: 'child',
   mustChangePassword: false,
 };
+const counts = {
+  starter: 2,
+  explorer: 0,
+  challenger: 0,
+  multiplyMeaning: 0,
+  multiplyFacts: 0,
+  multiplyMixed: 0,
+  abacusMove: 0,
+  abacusMatch: 0,
+  abacusCalculation: 0,
+};
 const questions = [
   {
     id: 'q1',
@@ -28,14 +39,16 @@ const questions = [
   },
 ];
 const round = {
+  mode: 'challenge',
   id: 'round-1',
   status: 'started',
   source: 'custom',
   packageName: '测试练习',
-  counts: { starter: 2 },
+  counts,
   totalCount: 2,
   startedAt: new Date().toISOString(),
   completedAt: null,
+  challengerChain: false,
   questions,
 };
 type Answer = { questionId: string; answer: string; clientVersion: number };
@@ -66,6 +79,20 @@ async function mockApi(
         body: JSON.stringify(body),
       });
     if (path === 'auth/me') return json({ user });
+    if (path === 'auth/logout') {
+      order.push('logout');
+      return json({ ok: true });
+    }
+    if (path === 'learning/preferences')
+      return json({
+        preferences: { counts, challengerChain: false, mode: 'challenge' },
+      });
+    if (path === 'learning/progress')
+      return json({
+        topics: [],
+        summary: { rounds: 0, questions: 0, correct: 0, practice_days: 0 },
+        recent: [],
+      });
     if (path === 'rounds/active')
       return json({
         round: options.answered
@@ -81,7 +108,7 @@ async function mockApi(
       });
     if (path === 'records') {
       recordReads++;
-      if (options.refreshFails && recordReads === 2)
+      if (options.refreshFails && recordReads >= 2 && recordReads <= 3)
         return json({ error: '记录暂时无法加载' }, 500);
       return json({ records: [] });
     }
@@ -118,10 +145,6 @@ async function mockApi(
         options.abandonFails ? { error: '放弃失败，请重试' } : { ok: true },
         options.abandonFails ? 500 : 200,
       );
-    if (path === 'auth/logout') {
-      order.push('logout');
-      return json({ ok: true });
-    }
     if (path.endsWith('/submit'))
       return json({
         result: {
@@ -145,7 +168,8 @@ async function mockApi(
       });
     return json({ error: 'Unexpected test API' }, 404);
   });
-  await page.goto('/');
+  // 已有 activeStarted 轮次时直达答题界面，保持“首次打开即可作答”的测试语义。
+  await page.goto('/#practice');
   await expect(page.getByLabel('第 1 题答案')).toBeVisible();
   return { saved, order, errors };
 }
@@ -156,9 +180,9 @@ test('accepting one conflicting server answer still saves all other pending answ
   const state = await mockApi(page, { conflict: true });
   await page.getByLabel('第 1 题答案').fill('9');
   await page.getByLabel('第 2 题答案').fill('4');
-  await expect(page.getByText('答案已保存', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '使用已保存答案' }).click();
   await expect(page.getByLabel('第 1 题答案')).toHaveValue('2');
-  expect(state.saved).toHaveLength(2);
+  await expect.poll(() => state.saved.length).toBe(2);
   expect(state.saved[1]).toEqual([
     { questionId: 'q2', answer: '4', clientVersion: 1 },
   ]);
@@ -170,13 +194,14 @@ test('a failed abandon keeps answer editing and persistence working', async ({
 }) => {
   const state = await mockApi(page, { abandonFails: true });
   await page.getByLabel('第 1 题答案').fill('8');
-  await page.getByRole('button', { name: '退出本轮' }).click();
+  await page.getByRole('button', { name: '结束本轮' }).click();
+  await page.getByRole('button', { name: '放弃本轮' }).click();
   await expect(page.getByText('放弃失败，请重试').first()).toBeVisible();
+  await page.getByRole('button', { name: '关闭' }).click();
   await page.getByLabel('第 1 题答案').fill('7');
-  await expect(page.getByText('答案已保存', { exact: true })).toBeVisible();
-  expect(state.saved.at(-1)?.find((a) => a.questionId === 'q1')?.answer).toBe(
-    '7',
-  );
+  await expect
+    .poll(() => state.saved.at(-1)?.find((a) => a.questionId === 'q1')?.answer)
+    .toBe('7');
   expect(state.errors).toEqual([]);
 });
 
@@ -204,10 +229,11 @@ test('logout locks submission, abandonment and repeated logout until pending sav
   await page.getByTitle('退出登录').click();
   try {
     await expect.poll(() => state.order).toEqual(['save']);
+    // live 界面的交卷入口在答题卡工具按钮上，锁定期间同样不可用。
     await expect(
-      page.getByRole('button', { name: '提交并查看成绩' }),
+      page.getByRole('button', { name: '查看答题卡' }).first(),
     ).toBeDisabled();
-    await expect(page.getByRole('button', { name: '退出本轮' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: '结束本轮' })).toBeDisabled();
     await expect(page.getByTitle('退出登录')).toBeDisabled();
   } finally {
     release();
@@ -220,12 +246,13 @@ test('refresh failure preserves submitted results and offers a working retry', a
   page,
 }) => {
   const state = await mockApi(page, { answered: true, refreshFails: true });
+  await page.getByRole('button', { name: '查看答题卡' }).first().click();
   await page.getByRole('button', { name: '提交并查看成绩' }).click();
-  await expect(page.getByText('满分！你是口算小冠军！')).toBeVisible();
+  await expect(page.getByText('这一轮，全都答对了！')).toBeVisible();
   const retry = page.getByRole('button', { name: '重试刷新记录与错题本' });
   await expect(retry).toBeVisible();
   await retry.click();
   await expect(retry).toHaveCount(0);
-  await expect(page.getByText('满分！你是口算小冠军！')).toBeVisible();
+  await expect(page.getByText('这一轮，全都答对了！')).toBeVisible();
   expect(state.errors).toEqual([]);
 });

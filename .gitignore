@@ -40,3 +40,6 @@ next-env.d.ts
 /work/
 /test-results/
 /playwright-report/
+
+# local QA and browser artifacts
+/.gstack/

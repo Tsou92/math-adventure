@@ -1,0 +1,13 @@
+.gstack/
+.agents/
+work/
+outputs/
+.env*
+**/*.test.ts
+server/test-support.ts
+e2e/
+test-results/
+playwright-report/
+server/testing/
+playwright.config.ts
+vitest*.config.ts

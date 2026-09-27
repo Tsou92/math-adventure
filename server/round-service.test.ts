@@ -48,6 +48,7 @@ const counts: QuestionCounts = {
   challenger: 0,
   multiplyMeaning: 0,
   multiplyFacts: 0,
+  multiplyMixed: 0,
   abacusMove: 0,
   abacusMatch: 0,
   abacusCalculation: 0,

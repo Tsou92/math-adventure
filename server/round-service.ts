@@ -24,6 +24,8 @@ export interface RoundRow extends Row {
   duration_seconds?: number | null;
   completed_at?: string | null;
   package_name?: string;
+  mode?: 'practice' | 'challenge';
+  multiply_mixed_count?: number;
 }
 
 export interface AnswerInput {
@@ -42,6 +44,7 @@ export interface CreateRoundInput {
   counts: QuestionCounts;
   challengerChain: boolean;
   idempotencyKey: string;
+  mode?: 'practice' | 'challenge';
 }
 
 export interface RoundMutationOutcome {
@@ -140,6 +143,7 @@ function countsFromRound(source: RoundRow): QuestionCounts {
     challenger: Number(source.challenger_count),
     multiplyMeaning: Number(source.multiply_meaning_count),
     multiplyFacts: Number(source.multiply_facts_count),
+    multiplyMixed: Number(source.multiply_mixed_count),
     abacusMove: Number(source.abacus_move_count),
     abacusMatch: Number(source.abacus_match_count),
     abacusCalculation: Number(source.abacus_calculation_count),
@@ -155,16 +159,17 @@ async function insertRoundWithQuestions(
     idempotencyKey: string;
     source: 'custom' | 'repeat';
     packageName: string;
+    mode: 'practice' | 'challenge';
     counts: QuestionCounts;
     generated: Question[];
     seed: number;
   },
 ) {
   await tx.query(
-    `INSERT INTO kousuan.practice_rounds (id, user_id, family_id, idempotency_key, source, package_name,
-      starter_count, explorer_count, challenger_count, multiply_meaning_count, multiply_facts_count,
+    `INSERT INTO kousuan.practice_rounds (id, user_id, family_id, idempotency_key, source, package_name, mode,
+      starter_count, explorer_count, challenger_count, multiply_meaning_count, multiply_facts_count, multiply_mixed_count,
       abacus_move_count, abacus_match_count, abacus_calculation_count, total_count, seed)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
     [
       input.roundId,
       input.userId,
@@ -172,11 +177,13 @@ async function insertRoundWithQuestions(
       input.idempotencyKey,
       input.source,
       input.packageName,
+      input.mode,
       input.counts.starter,
       input.counts.explorer,
       input.counts.challenger,
       input.counts.multiplyMeaning,
       input.counts.multiplyFacts,
+      input.counts.multiplyMixed,
       input.counts.abacusMove,
       input.counts.abacusMatch,
       input.counts.abacusCalculation,
@@ -391,6 +398,8 @@ function roundResult(round: RoundRow): Row {
     total_count: round.total_count,
     duration_seconds: round.duration_seconds,
     completed_at: round.completed_at,
+    mode: round.mode,
+    multiply_mixed_count: round.multiply_mixed_count,
   };
 }
 
@@ -467,6 +476,9 @@ export async function submitRound(
             last_answer = excluded.last_answer,
             level = excluded.level,
             prompt_data = excluded.prompt_data,
+            correct_streak = 0,
+            mastered_at = NULL,
+            next_review_at = now(),
             last_seen_at = now()`,
         [userId, JSON.stringify(aggregateWrongStats(wrong))],
       );
@@ -477,7 +489,7 @@ export async function submitRound(
         SET status = 'completed', score = $3, correct_count = $4, completed_at = now(),
           duration_seconds = greatest(0, extract(epoch from (now() - started_at))::int)
         WHERE id = $1 AND user_id = $2 AND status = 'started'
-        RETURNING score, correct_count, total_count, duration_seconds, completed_at`,
+        RETURNING score, correct_count, total_count, duration_seconds, completed_at, mode, multiply_mixed_count`,
       [roundId, userId, score, correct.length],
     );
     if (!updated.rows[0]) throw httpError(409, '这轮练习不在答题中');
@@ -537,6 +549,7 @@ export async function createRound(
         idempotencyKey: input.idempotencyKey,
         source: 'custom',
         packageName: '自选知识点练习',
+        mode: input.mode === 'practice' ? 'practice' : 'challenge',
         counts: input.counts,
         generated,
         seed,
@@ -603,6 +616,7 @@ export async function repeatRound(
         idempotencyKey,
         source: 'repeat',
         packageName: `${String(source.package_name)}·再练一次`,
+        mode: source.mode === 'practice' ? 'practice' : 'challenge',
         counts,
         generated,
         seed,

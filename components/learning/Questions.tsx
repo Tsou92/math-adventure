@@ -1,29 +1,24 @@
 'use client';
-
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { Abacus } from '@/components/Abacus';
+import { useState, useRef, useEffect, type CSSProperties } from 'react';
 import type {
-  AbacusCalculationPrompt,
-  AbacusMatchPrompt,
   AbacusMovePrompt,
+  AbacusMatchPrompt,
+  AbacusCalculationPrompt,
 } from '@/lib/questions';
-import type { RoundQuestion } from '@/lib/learning-types';
-
-export const pairColors = ['#7565DD', '#E07186', '#16917F', '#D88A18'];
-
+import type { RoundQuestion } from '@/lib/types';
+import { Abacus } from '@/components/Abacus';
+import { AbacusInput } from './AbacusInput';
+const pairColors = ['#7565DD', '#E07186', '#16917F', '#D88A18'];
 export function AbacusMoveQuestion({
   question,
   answer,
   onAnswer,
-  disabled = false,
 }: {
   question: RoundQuestion;
   answer: string;
   onAnswer: (id: string, value: string) => void;
-  disabled?: boolean;
 }) {
   const prompt = question.promptData as AbacusMovePrompt;
-  const currentValue = answer === '' ? 0 : Number(answer);
   return (
     <article className="abacus-move-card">
       <div className="flex items-center justify-between">
@@ -37,23 +32,11 @@ export function AbacusMoveQuestion({
           {prompt.operand}
         </span>
         <div className="grid justify-items-center gap-2">
-          <Abacus
-            value={currentValue}
-            interactive={!disabled}
-            showValue
+          <AbacusInput
+            value={answer}
             label={`第 ${question.position} 题作答算盘`}
-            onChange={(value) => onAnswer(question.id, String(value))}
+            onChange={(value) => onAnswer(question.id, value)}
           />
-          {answer === '' && (
-            <button
-              className="abacus-zero-button"
-              type="button"
-              disabled={disabled}
-              onClick={() => onAnswer(question.id, '0')}
-            >
-              确认答案是 0
-            </button>
-          )}
         </div>
       </div>
     </article>
@@ -64,12 +47,10 @@ export function AbacusMatchBoard({
   questions,
   answers,
   onAnswer,
-  disabled = false,
 }: {
   questions: RoundQuestion[];
   answers: Record<string, string>;
   onAnswer: (id: string, value: string) => void;
-  disabled?: boolean;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [lines, setLines] = useState<
@@ -124,7 +105,6 @@ export function AbacusMatchBoard({
     };
   }, [answers, questions]);
   const assign = (value: number) => {
-    if (disabled) return;
     if (!selected) {
       const occupied = questions.find(
         (question) => answers[question.id] === String(value),
@@ -143,7 +123,9 @@ export function AbacusMatchBoard({
     );
     if (occupied) onAnswer(occupied.id, '');
     onAnswer(selected.id, String(value));
-    setSelectedId(null);
+    setSelectedId(
+      questions.find((q) => q.id !== selected.id && !answers[q.id])?.id ?? null,
+    );
   };
   return (
     <article className="abacus-match-board">
@@ -152,8 +134,8 @@ export function AbacusMatchBoard({
           先点算式，再点正确的算盘
         </strong>
         <small className="font-bold text-[#A08390]">
-          {questions.filter((question) => answers[question.id] !== '').length}/
-          {questions.length} 已连线
+          {questions.filter((question) => Boolean(answers[question.id])).length}
+          /{questions.length} 已连线
         </small>
       </div>
       <div className="abacus-match-columns" ref={columnsRef}>
@@ -173,7 +155,7 @@ export function AbacusMatchBoard({
         </svg>
         <div className="abacus-match-list">
           {questions.map((question, index) => {
-            const paired = answers[question.id] !== '';
+            const paired = Boolean(answers[question.id]);
             return (
               <button
                 className={`abacus-match-expression ${selectedId === question.id ? 'selected' : ''} ${paired ? 'paired' : ''}`}
@@ -183,8 +165,8 @@ export function AbacusMatchBoard({
                     : undefined
                 }
                 type="button"
-                disabled={disabled}
                 key={question.id}
+                aria-label={`第 ${question.position} 题，${question.expression}${paired ? '，已配对' : ''}`}
                 ref={(node) => {
                   expressionRefs.current[question.id] = node;
                 }}
@@ -216,12 +198,11 @@ export function AbacusMatchBoard({
                     : undefined
                 }
                 type="button"
-                disabled={disabled}
                 key={value}
                 ref={(node) => {
                   optionRefs.current[String(value)] = node;
                 }}
-                aria-label={`选择这个算盘珠形${ownerIndex >= 0 ? '，已经配对' : ''}`}
+                aria-label={`选择候选算盘 ${optionValues.indexOf(value) + 1}${ownerIndex >= 0 ? '，已经配对' : ''}`}
                 onClick={() => assign(value)}
               >
                 <Abacus value={value} compact label="候选算盘" />
@@ -238,12 +219,12 @@ export function AbacusCalculationQuestion({
   question,
   answer,
   onAnswer,
-  disabled = false,
+  onKeyDown,
 }: {
   question: RoundQuestion;
   answer: string;
   onAnswer: (id: string, value: string) => void;
-  disabled?: boolean;
+  onKeyDown?: React.KeyboardEventHandler<HTMLInputElement>;
 }) {
   const prompt = question.promptData as AbacusCalculationPrompt;
   return (
@@ -260,9 +241,10 @@ export function AbacusCalculationQuestion({
       </span>
       <input
         inputMode="numeric"
+        onKeyDown={onKeyDown}
+        enterKeyHint="next"
         aria-label={`第 ${question.position} 题答案`}
         value={answer}
-        disabled={disabled}
         onChange={(event) => onAnswer(question.id, event.target.value)}
       />
     </label>

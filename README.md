@@ -1,6 +1,6 @@
-# 口算星球
+# 数学星球
 
-儿童数学练习应用，包含家长与孩子账号、自选题目、算盘练习、自动保存、成绩与错题本。线上使用 Vercel 静态前端和 Node API，数据库为 Neon PostgreSQL。
+儿童数学练习应用，包含家长与孩子账号、自选题目、进位退位乘法、算盘练习、自动保存、学习进度、成绩与错题复习。线上使用 Vercel 静态前端和 Node API，数据库为 Neon PostgreSQL。
 
 ## 本地开发
 
@@ -13,7 +13,7 @@ npm run dev
 
 开发服务器默认只监听 `127.0.0.1`，同源提供页面与 `/api/*`，API 复用线上 `server/router.ts`。匿名访问 `/api/auth/me` 应返回 `200 {"user":null}`，不需要数据库。登录与答题需要在未提交的 `.env.local` 中设置开发数据库的 `DATABASE_URL`；Vite 只将该配置提供给服务端，不暴露给浏览器。不要使用生产数据库进行开发。
 
-首次配置专用开发数据库后，可运行 `npm run db:migrate` 应用 `db/migrations/`。`npm run db:bootstrap` 是初始化家长账号的维护命令。此次可靠性修复不引入新迁移。
+首次配置专用开发数据库后，可运行 `npm run db:migrate` 应用 `db/migrations/`。`npm run db:bootstrap` 是初始化家长账号的维护命令。现有 004/005 迁移分别提供学习模式/错题复习与混合乘法字段；合并部署保留这两项已上线迁移，可靠性修复本身不新增表结构。
 
 `npm run dev:vinext` 保留原 vinext 开发入口，也接入同一份 Node API 适配器。Vercel 部署继续使用 `npm run build:vercel`；`npm run build` 保留原 vinext/Cloudflare 构建检查。
 
@@ -55,4 +55,4 @@ TEST_DATABASE_URL='postgres://postgres:password@127.0.0.1:5432/math_adventure_te
 - `server/db.ts`：Neon HTTP 查询和请求内的事务连接。
 - `server/dev-api.ts`：本地 Node 请求与 Vercel handler 的适配。
 
-保存、开始、交卷、放弃都会锁定同一轮次，再读取状态与答案。已完成轮次的重复交卷返回原成绩；同一出题意图复用幂等键。修改密码在事务中撤销旧会话并生成新会话，提交成功后才设置 Cookie；创建登录会话时锁定账号并复核密码哈希，避免旧密码验证请求在改密后生成会话。
+保存、开始、交卷、放弃都会锁定同一轮次，再读取状态与答案。已完成轮次的重复交卷返回原成绩；同一出题意图复用幂等键。修改密码在事务中撤销旧会话并生成新会话，恢复码改密也先锁定账号再撤销会话，提交成功后才设置 Cookie；创建登录会话时锁定账号并复核密码哈希，避免旧密码验证请求在改密后生成会话。

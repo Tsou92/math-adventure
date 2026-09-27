@@ -1,14 +1,47 @@
 'use client';
-
 import { useState } from 'react';
 import { Check, ChevronDown, Trophy } from 'lucide-react';
+import { Abacus } from '@/components/Abacus';
+import type { RoundQuestion, RecordItem } from '@/lib/types';
 import {
-  formatDate,
   formatDuration,
+  formatDate,
   formatTimestamp,
-} from '@/lib/learning-display';
-import type { RecordItem } from '@/lib/learning-types';
-import { QuestionAnswerSummary } from './ResultPanel';
+  formatAnsweredExpression,
+} from '@/lib/learning';
+export function QuestionAnswerSummary({
+  question,
+}: {
+  question: RoundQuestion;
+}) {
+  if (question.level === 'abacusMove' || question.level === 'abacusMatch')
+    return (
+      <div className="abacus-review-summary">
+        <strong>{question.expression}</strong>
+        <span>你的珠形</span>
+        <Abacus value={Number(question.answer || 0)} compact label="作答珠形" />
+        {!question.isCorrect && question.correctAnswer !== undefined && (
+          <>
+            <span>正确珠形</span>
+            <Abacus
+              value={Number(question.correctAnswer)}
+              compact
+              label="正确珠形"
+            />
+          </>
+        )}
+      </div>
+    );
+  return (
+    <strong>
+      {formatAnsweredExpression(
+        question.expression,
+        question.answer,
+        question.level,
+      )}
+    </strong>
+  );
+}
 
 export function PracticeHistory({ records }: { records: RecordItem[] }) {
   const [openId, setOpenId] = useState<string | null>(null);
@@ -17,7 +50,7 @@ export function PracticeHistory({ records }: { records: RecordItem[] }) {
       <div className="empty-state">
         <Trophy className="size-8 text-[#F2A334]" />
         <div>
-          <strong>第一枚奖章等你来拿</strong>
+          <strong>第一轮练习，从今天开始</strong>
           <span>完成一轮练习后会记录在这里</span>
         </div>
       </div>
