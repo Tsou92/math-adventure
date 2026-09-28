@@ -34,6 +34,7 @@ import {
   startRound,
   submitRound,
 } from './round-service.js';
+import { promptData } from './utils.js';
 
 type Row = Record<string, unknown>;
 type LoginAttemptRow = {
@@ -46,17 +47,6 @@ type LoginUserRow = Row & {
   password_hash: string;
   is_active: boolean;
 };
-function promptData(value: unknown) {
-  if (!value) return {};
-  if (typeof value === 'string') {
-    try {
-      return JSON.parse(value) as Record<string, unknown>;
-    } catch {
-      return {};
-    }
-  }
-  return value as Record<string, unknown>;
-}
 
 export async function fetchChildrenSummary(familyId: string) {
   return db()`SELECT u.id, u.username, u.display_name, u.is_active, u.must_change_password, u.created_at,

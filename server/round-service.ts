@@ -10,6 +10,7 @@ import {
   type TransactionClient,
   type TransactionRunner,
 } from './db.js';
+import { promptData } from './utils.js';
 
 type Row = Record<string, unknown>;
 
@@ -78,18 +79,6 @@ function httpError(
     statusCode,
     ...(details ? { details } : {}),
   });
-}
-
-function promptData(value: unknown): Record<string, unknown> {
-  if (!value) return {};
-  if (typeof value === 'string') {
-    try {
-      return JSON.parse(value) as Record<string, unknown>;
-    } catch {
-      return {};
-    }
-  }
-  return value as Record<string, unknown>;
 }
 
 export function questionKey(level: string, expression: string, answer: number) {
