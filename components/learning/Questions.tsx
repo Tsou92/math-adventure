@@ -274,9 +274,10 @@ export function WordProblemQuestion({
       correctAnswer?: string | number;
       options?: string[];
     }>;
-  };
+  } | undefined;
 
-  if (!prompt) {
+  // 兼容旧题目：如果没有 promptData 或 steps，回退到简单的输入框
+  if (!prompt || !prompt.steps || prompt.steps.length === 0) {
     return (
       <label className="word-problem-card">
         <span className="question-number">{question.position}</span>
