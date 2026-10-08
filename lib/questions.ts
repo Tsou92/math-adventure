@@ -31,10 +31,24 @@ export type AbacusCalculationPrompt = {
   operations: Array<{ operator: '+' | '−'; value: number }>;
 };
 
+export type WordProblemStep = {
+  type: 'expression' | 'meaning' | 'calculate';
+  prompt: string;
+  correctAnswer?: string | number;
+  options?: string[];
+};
+
+export type WordProblemPrompt = {
+  version: 1;
+  story: string;
+  steps: WordProblemStep[];
+};
+
 export type QuestionPrompt =
   | AbacusMovePrompt
   | AbacusMatchPrompt
-  | AbacusCalculationPrompt;
+  | AbacusCalculationPrompt
+  | WordProblemPrompt;
 
 export type Question = {
   id: string;
@@ -364,75 +378,255 @@ export function makeQuestionsForCounts(
   const usedWordProblems = new Set<string>();
   while (usedWordProblems.size < counts.mixedWordProblem) {
     const problemType = usedWordProblems.size % 8;
-    let expression: string;
-    let answer: number;
+    let story: string;
+    let finalAnswer: number;
+    let steps: WordProblemStep[];
 
     if (problemType === 0) {
       const days = int(2, 5);
       const perDay = int(3, 9);
       const total = days * perDay;
-      expression = `妈妈准备制作 ${total} 张剪纸，每天剪 ${perDay} 张，需要 □ 天完成`;
-      answer = days;
+      story = `妈妈准备制作 ${total} 张剪纸，每天剪 ${perDay} 张，需要多少天完成？`;
+      steps = [
+        {
+          type: 'expression',
+          prompt: '第一步：列出算式',
+          correctAnswer: `${total}÷${perDay}`,
+        },
+        {
+          type: 'meaning',
+          prompt: `这个算式 ${total} ÷ ${perDay} 表示什么意思？`,
+          options: [
+            `把 ${total} 平均分成 ${perDay} 份，每份是多少`,
+            `${total} 个 ${perDay} 相加`,
+            `${perDay} 个 ${total} 相加`,
+          ],
+          correctAnswer: `把 ${total} 平均分成 ${perDay} 份，每份是多少`,
+        },
+        {
+          type: 'calculate',
+          prompt: `计算：${total} ÷ ${perDay} = ?`,
+          correctAnswer: days,
+        },
+      ];
+      finalAnswer = days;
     } else if (problemType === 1) {
       const people = int(3, 6);
       const perPerson = int(3, 9);
       const total = people * perPerson;
-      expression = `有 ${total} 本故事书，平均分给 ${people} 个好朋友，每人分得 □ 本`;
-      answer = perPerson;
+      story = `有 ${total} 本故事书，平均分给 ${people} 个好朋友，每人分得多少本？`;
+      steps = [
+        {
+          type: 'expression',
+          prompt: '第一步：列出算式',
+          correctAnswer: `${total}÷${people}`,
+        },
+        {
+          type: 'meaning',
+          prompt: `这个算式 ${total} ÷ ${people} 表示什么意思？`,
+          options: [
+            `把 ${total} 本书平均分给 ${people} 个人`,
+            `${total} 个 ${people} 相加`,
+            `${people} 个 ${total} 相加`,
+          ],
+          correctAnswer: `把 ${total} 本书平均分给 ${people} 个人`,
+        },
+        {
+          type: 'calculate',
+          prompt: `计算：${total} ÷ ${people} = ?`,
+          correctAnswer: perPerson,
+        },
+      ];
+      finalAnswer = perPerson;
     } else if (problemType === 2) {
       const baskets = int(3, 8);
       const perBasket = int(4, 8);
       const total = baskets * perBasket;
       const eaten = int(perBasket, Math.min(total - 1, perBasket * 2));
-      expression = `每筐有 ${perBasket} 个桃子，有 ${baskets} 筐，一共有 ${total} 个，已经吃了 ${eaten} 个，还有 □ 个桃子`;
-      answer = total - eaten;
+      const remaining = total - eaten;
+      story = `每筐有 ${perBasket} 个桃子，有 ${baskets} 筐，一共有 ${total} 个，已经吃了 ${eaten} 个，还有多少个桃子？`;
+      steps = [
+        {
+          type: 'expression',
+          prompt: '第一步：列出算式',
+          correctAnswer: `${total}-${eaten}`,
+        },
+        {
+          type: 'meaning',
+          prompt: `这个算式 ${total} - ${eaten} 表示什么意思？`,
+          options: [
+            `从总数 ${total} 中减去已吃的 ${eaten} 个`,
+            `把 ${total} 和 ${eaten} 相加`,
+            `把 ${total} 平均分成 ${eaten} 份`,
+          ],
+          correctAnswer: `从总数 ${total} 中减去已吃的 ${eaten} 个`,
+        },
+        {
+          type: 'calculate',
+          prompt: `计算：${total} - ${eaten} = ?`,
+          correctAnswer: remaining,
+        },
+      ];
+      finalAnswer = remaining;
     } else if (problemType === 3) {
       const classes = int(3, 5);
       const perClass = int(5, 10);
       const total = classes * perClass;
       const storyBooks = int(Math.floor(total * 0.4), Math.floor(total * 0.7));
       const techBooks = total - storyBooks;
-      expression = `学校买了 ${storyBooks} 本故事书和 ${techBooks} 本科技书，平均分给 ${classes} 个班，每班分得 □ 本书`;
-      answer = perClass;
+      story = `学校买了 ${storyBooks} 本故事书和 ${techBooks} 本科技书，平均分给 ${classes} 个班，每班分得多少本书？`;
+      steps = [
+        {
+          type: 'expression',
+          prompt: '第一步：列出算式（先算总数，再算平均分配）',
+          correctAnswer: `(${storyBooks}+${techBooks})÷${classes}`,
+        },
+        {
+          type: 'meaning',
+          prompt: `算式 (${storyBooks} + ${techBooks}) ÷ ${classes} 表示什么？`,
+          options: [
+            `先把两种书加起来，再平均分给 ${classes} 个班`,
+            `先平均分配，再把两种书加起来`,
+            `把故事书和科技书分别平均分配`,
+          ],
+          correctAnswer: `先把两种书加起来，再平均分给 ${classes} 个班`,
+        },
+        {
+          type: 'calculate',
+          prompt: `计算：(${storyBooks} + ${techBooks}) ÷ ${classes} = ?`,
+          correctAnswer: perClass,
+        },
+      ];
+      finalAnswer = perClass;
     } else if (problemType === 4) {
       const posters = int(2, 4);
       const perPoster = int(2, 5);
       const total = posters * perPoster;
       const workers = int(2, Math.min(5, total));
       const sheetsPerWorker = total / workers;
-      expression = `${workers} 名工作人员每人要贴 ${sheetsPerWorker} 张反诈防骗宣传单到社区宣传栏，平均每个宣传栏上要贴 □ 张`;
-      answer = perPoster;
+      story = `${workers} 名工作人员每人要贴 ${sheetsPerWorker} 张反诈防骗宣传单到社区宣传栏，一共要贴到 ${posters} 个宣传栏，平均每个宣传栏上要贴多少张？`;
+      steps = [
+        {
+          type: 'expression',
+          prompt: '第一步：列出算式（先算总数，再算平均分配）',
+          correctAnswer: `(${workers}×${sheetsPerWorker})÷${posters}`,
+        },
+        {
+          type: 'meaning',
+          prompt: `算式 (${workers} × ${sheetsPerWorker}) ÷ ${posters} 表示什么？`,
+          options: [
+            `先算出总共有多少张，再平均分给 ${posters} 个宣传栏`,
+            `先平均分配，再乘以工作人员数量`,
+            `把每个人的数量加起来`,
+          ],
+          correctAnswer: `先算出总共有多少张，再平均分给 ${posters} 个宣传栏`,
+        },
+        {
+          type: 'calculate',
+          prompt: `计算：(${workers} × ${sheetsPerWorker}) ÷ ${posters} = ?`,
+          correctAnswer: perPoster,
+        },
+      ];
+      finalAnswer = perPoster;
     } else if (problemType === 5) {
-      const triangleValue = int(3, 5);
-      const circleValue = int(2, 3);
-      expression = `25 ÷ △ = △，○ + ○ + ○ + ○ + ○ + ○ + △ = 23，△ = □，○ = □`;
-      answer = 5;
+      story = `25 ÷ △ = △，○ + ○ + ○ + ○ + ○ + ○ + △ = 23，求 △ 和 ○ 各是多少？`;
+      steps = [
+        {
+          type: 'expression',
+          prompt: '第一步：从 25 ÷ △ = △ 可以推出 △ 是多少？',
+          correctAnswer: `5`,
+        },
+        {
+          type: 'meaning',
+          prompt: '为什么 △ = 5？',
+          options: [
+            '因为 25 ÷ 5 = 5',
+            '因为 25 - 5 = 20',
+            '因为 5 × 5 = 25',
+          ],
+          correctAnswer: '因为 25 ÷ 5 = 5',
+        },
+        {
+          type: 'calculate',
+          prompt: '已知 △ = 5，从 6个○ + △ = 23 算出 ○ = ?',
+          correctAnswer: 3,
+        },
+      ];
+      finalAnswer = 5;
     } else if (problemType === 6) {
       const people = int(8, 15);
-      const bowlsPerPerson = 1;
       const vegPlatesPerPeople = int(2, 3);
       const soupBowlsPerPeople = int(3, 4);
-      const totalNeeded =
-        people +
-        Math.ceil(people / vegPlatesPerPeople) +
-        Math.ceil(people / soupBowlsPerPeople);
-      expression = `${people} 人吃饭，每人一个饭碗，每 ${vegPlatesPerPeople} 人共用一个菜碗，每 ${soupBowlsPerPeople} 人共用一个汤碗，共需要 □ 个碗`;
-      answer = totalNeeded;
+      const vegBowls = Math.ceil(people / vegPlatesPerPeople);
+      const soupBowls = Math.ceil(people / soupBowlsPerPeople);
+      const totalNeeded = people + vegBowls + soupBowls;
+      story = `${people} 人吃饭，每人一个饭碗，每 ${vegPlatesPerPeople} 人共用一个菜碗，每 ${soupBowlsPerPeople} 人共用一个汤碗，共需要多少个碗？`;
+      steps = [
+        {
+          type: 'expression',
+          prompt: '第一步：列出算式（饭碗 + 菜碗 + 汤碗）',
+          correctAnswer: `${people}+${vegBowls}+${soupBowls}`,
+        },
+        {
+          type: 'meaning',
+          prompt: `为什么是 ${people} + ${vegBowls} + ${soupBowls}？`,
+          options: [
+            `${people} 个饭碗 + ${vegBowls} 个菜碗 + ${soupBowls} 个汤碗`,
+            `每人需要的碗数相加`,
+            `总人数乘以每人的碗数`,
+          ],
+          correctAnswer: `${people} 个饭碗 + ${vegBowls} 个菜碗 + ${soupBowls} 个汤碗`,
+        },
+        {
+          type: 'calculate',
+          prompt: `计算：${people} + ${vegBowls} + ${soupBowls} = ?`,
+          correctAnswer: totalNeeded,
+        },
+      ];
+      finalAnswer = totalNeeded;
     } else {
       const groupSize = int(2, 4);
       const groups = int(3, 6);
       const mountaineers = groups * groupSize;
-      expression = `有 ${mountaineers} 只穿山甲，${groupSize} 只穿山甲住一个洞穴，一共住了 □ 个洞穴`;
-      answer = groups;
+      story = `有 ${mountaineers} 只穿山甲，${groupSize} 只穿山甲住一个洞穴，一共住了多少个洞穴？`;
+      steps = [
+        {
+          type: 'expression',
+          prompt: '第一步：列出算式',
+          correctAnswer: `${mountaineers}÷${groupSize}`,
+        },
+        {
+          type: 'meaning',
+          prompt: `这个算式 ${mountaineers} ÷ ${groupSize} 表示什么意思？`,
+          options: [
+            `把 ${mountaineers} 只穿山甲，每 ${groupSize} 只分一组`,
+            `${mountaineers} 个 ${groupSize} 相加`,
+            `${groupSize} 个 ${mountaineers} 相加`,
+          ],
+          correctAnswer: `把 ${mountaineers} 只穿山甲，每 ${groupSize} 只分一组`,
+        },
+        {
+          type: 'calculate',
+          prompt: `计算：${mountaineers} ÷ ${groupSize} = ?`,
+          correctAnswer: groups,
+        },
+      ];
+      finalAnswer = groups;
     }
 
-    if (usedWordProblems.has(expression)) continue;
-    usedWordProblems.add(expression);
+    const uniqueKey = `${story}-${finalAnswer}`;
+    if (usedWordProblems.has(uniqueKey)) continue;
+    usedWordProblems.add(uniqueKey);
     questions.push({
       id: `mixedWordProblem-${usedWordProblems.size}`,
       level: 'mixedWordProblem',
-      expression,
-      answer,
+      expression: story,
+      answer: finalAnswer,
+      promptData: {
+        version: 1,
+        story,
+        steps,
+      },
     });
   }
 

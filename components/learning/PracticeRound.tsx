@@ -31,6 +31,7 @@ import {
   AbacusCalculationQuestion,
   AbacusMatchBoard,
   AbacusMoveQuestion,
+  WordProblemQuestion,
 } from './Questions';
 import { ErrorNotice, Modal } from './Shared';
 
@@ -215,6 +216,13 @@ export function PracticeRound({
           <AbacusMoveQuestion question={q} answer={answer} onAnswer={update} />
         ) : q.level === 'abacusCalculation' ? (
           <AbacusCalculationQuestion
+            onKeyDown={keyboard}
+            question={q}
+            answer={answer}
+            onAnswer={update}
+          />
+        ) : q.level === 'mixedWordProblem' ? (
+          <WordProblemQuestion
             onKeyDown={keyboard}
             question={q}
             answer={answer}
