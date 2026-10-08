@@ -946,6 +946,11 @@ button.abacus-bead:focus-visible {
   box-shadow: 0 0 0 4px rgba(117, 101, 221, 0.12);
 }
 
+/* 应用题卡片独占一行，避免和其他题目混排时高度拉伸 */
+.word-problem-card {
+  grid-column: 1 / -1;
+}
+
 .result-stat {
   display: grid;
   place-items: center;
