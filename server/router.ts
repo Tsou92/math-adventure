@@ -425,8 +425,26 @@ async function createRound(req: VercelRequest, res: VercelResponse) {
       challengerChain: z.boolean().default(false),
       mode: z.enum(['practice', 'challenge']).default('challenge'),
       idempotencyKey: z.uuid(),
+      // 可选：同时保存 preferences，减少一次网络往返
+      savePreferences: z.boolean().optional(),
     })
     .parse(body(req));
+
+  // 如果请求要求同时保存 preferences，先保存（不等待响应，快速返回）
+  if (input.savePreferences) {
+    const prefs = {
+      counts: input.counts,
+      mode: input.mode,
+      challengerChain: input.challengerChain,
+    };
+    // 异步保存，不阻塞 round 创建
+    void db()`
+      INSERT INTO kousuan.learning_preferences (user_id, settings)
+      VALUES (${user.id}, ${JSON.stringify(prefs)})
+      ON CONFLICT (user_id) DO UPDATE SET settings = EXCLUDED.settings, updated_at = NOW()
+    `.catch((err) => console.error('[createRound] 保存 preferences 失败', err));
+  }
+
   const outcome = await createRoundService(user.id, {
     counts: input.counts,
     mode: input.mode,

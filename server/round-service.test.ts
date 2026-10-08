@@ -249,6 +249,16 @@ describe('submitRound 幂等与错题聚合', () => {
 describe('createRound / repeatRound 重试幂等', () => {
   it('createRound 命中 idempotency_key 时返回已有轮次且不插入', async () => {
     const { calls, runner } = fakeTransaction((text) => {
+      // 新的合并查询（lockUserAndCheckRound）
+      if (text.includes('WITH user_lock AS')) {
+        return [{
+          user_id: 'u1',
+          family_id: 'f1',
+          existing_round_id: 'round-existing',
+          active_round_id: null,
+        }];
+      }
+      // 旧的独立查询（向后兼容）
       if (text.includes('SELECT id, family_id FROM kousuan.users')) {
         return [{ id: 'u1', family_id: 'f1' }];
       }

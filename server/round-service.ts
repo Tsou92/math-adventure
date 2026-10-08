@@ -125,6 +125,46 @@ async function findActiveRound(tx: TransactionClient, userId: string) {
   return rows[0] ? String(rows[0].id) : null;
 }
 
+/**
+ * 合并查询：锁定用户 + 检查幂等性 + 检查进行中的回合
+ * 将三次数据库往返减少到一次，显著降低网络延迟
+ */
+async function lockUserAndCheckRound(
+  tx: TransactionClient,
+  userId: string,
+  idempotencyKey: string,
+) {
+  const { rows } = await tx.query<{
+    user_id: string | null;
+    family_id: string | null;
+    existing_round_id: string | null;
+    active_round_id: string | null;
+  }>(
+    `WITH user_lock AS (
+      SELECT id, family_id FROM kousuan.users WHERE id = $1 FOR UPDATE
+    ),
+    existing AS (
+      SELECT id FROM kousuan.practice_rounds
+      WHERE user_id = $1 AND idempotency_key = $2 LIMIT 1
+    ),
+    active AS (
+      SELECT id FROM kousuan.practice_rounds
+      WHERE user_id = $1 AND status IN ('generated', 'started') LIMIT 1
+    )
+    SELECT
+      user_lock.id as user_id,
+      user_lock.family_id,
+      existing.id as existing_round_id,
+      active.id as active_round_id
+    FROM user_lock
+    LEFT JOIN existing ON true
+    LEFT JOIN active ON true`,
+    [userId, idempotencyKey],
+  );
+
+  return rows[0] || null;
+}
+
 function countsFromRound(source: RoundRow): QuestionCounts {
   return {
     starter: Number(source.starter_count),
@@ -515,20 +555,22 @@ export async function createRound(
 ): Promise<RoundMutationOutcome> {
   try {
     return await runner(async (tx) => {
-      // 锁定 user 行，按用户串行化创建，避免并发插入触发唯一约束。
-      const user = await lockUser(tx, userId);
-      if (!user) throw httpError(404, '账号不存在');
-      const existing = await findByIdempotency(
-        tx,
-        userId,
-        input.idempotencyKey,
-      );
-      if (existing) return { roundId: existing, existing: true };
-      const active = await findActiveRound(tx, userId);
-      if (active)
+      // 合并查询：锁定 user + 检查幂等性 + 检查进行中的回合（从 3 次往返减少到 1 次）
+      const result = await lockUserAndCheckRound(tx, userId, input.idempotencyKey);
+
+      if (!result?.user_id) throw httpError(404, '账号不存在');
+
+      // 如果已存在相同 idempotency key 的回合，直接返回
+      if (result.existing_round_id) {
+        return { roundId: result.existing_round_id, existing: true };
+      }
+
+      // 如果有进行中的回合，返回错误
+      if (result.active_round_id) {
         throw httpError(409, '你还有一轮练习没有完成', {
-          activeRoundId: active,
+          activeRoundId: result.active_round_id,
         });
+      }
 
       const roundId = randomUUID();
       const seed = randomInt(1, 2_000_000_000);
@@ -538,7 +580,7 @@ export async function createRound(
       await insertRoundWithQuestions(tx, {
         roundId,
         userId,
-        familyId: user.family_id,
+        familyId: result.family_id,
         idempotencyKey: input.idempotencyKey,
         source: 'custom',
         packageName: '自选知识点练习',

@@ -153,15 +153,16 @@ export default function ChildDashboard({
       intentRef.current = intent;
     }
     try {
-      await apiVoid('learning/preferences', {
-        method: 'PUT',
-        body: JSON.stringify(settings),
-      });
-      setPrefs(settings);
+      // 优化：在创建 round 的同时保存 preferences，减少一次网络往返
       const data = await api<{ round: Round }>('rounds', {
         method: 'POST',
-        body: JSON.stringify({ ...input, idempotencyKey: intent.key }),
+        body: JSON.stringify({
+          ...input,
+          idempotencyKey: intent.key,
+          savePreferences: true, // 服务端会异步保存 preferences
+        }),
       });
+      setPrefs(settings);
       intentRef.current = null;
       setRound(data.round);
       navigate('practice');
