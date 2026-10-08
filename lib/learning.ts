@@ -34,6 +34,21 @@ export const levelInfo: Record<
     subtitle: '先算乘法，再进退位加减 · 如 6×9＋28',
     tone: 'purple',
   },
+  divisionMeaning: {
+    title: '除法启蒙',
+    subtitle: '平均分、除法的意义',
+    tone: 'cyan',
+  },
+  divisionFacts: {
+    title: '表内除法',
+    subtitle: '2～9 的除法计算',
+    tone: 'indigo',
+  },
+  mixedWordProblem: {
+    title: '乘除应用题',
+    subtitle: '实际场景的多步计算',
+    tone: 'emerald',
+  },
   abacusMove: {
     title: '珠心算·空拨画珠',
     subtitle: '看起始珠形，拨出计算结果',
@@ -58,6 +73,9 @@ export const emptyCounts: QuestionCounts = {
   multiplyMeaning: 0,
   multiplyFacts: 0,
   multiplyMixed: 0,
+  divisionMeaning: 0,
+  divisionFacts: 0,
+  mixedWordProblem: 0,
   abacusMove: 0,
   abacusMatch: 0,
   abacusCalculation: 0,
@@ -91,7 +109,12 @@ export function formatTimestamp(value: string | null) {
 }
 
 export function expressionWithAnswerBlank(expression: string, level: Level) {
-  if (level !== 'multiplyMeaning' || expression.includes('□'))
+  if (
+    (level !== 'multiplyMeaning' &&
+      level !== 'divisionMeaning' &&
+      level !== 'mixedWordProblem') ||
+    expression.includes('□')
+  )
     return expression;
   if (expression.endsWith(' × 几')) return expression.replace(/几$/, '□');
   if (expression.includes('可以看成几个 '))
@@ -99,6 +122,14 @@ export function expressionWithAnswerBlank(expression: string, level: Level) {
   if (expression.endsWith('和是')) return `${expression} □`;
   if (expression.endsWith('一共有')) return `${expression} □ 个`;
   if (expression.endsWith('另一个乘数是')) return `${expression} □`;
+  if (level === 'divisionMeaning' || level === 'mixedWordProblem') {
+    if (expression.includes('每人分到')) return expression;
+    if (expression.includes('可以分成')) return expression;
+    if (expression.includes('除数是')) return expression;
+    if (expression.includes('可以放')) return expression;
+    if (expression.includes('需要') && expression.includes('天')) return expression;
+    if (expression.includes('还有') && expression.includes('个')) return expression;
+  }
   return expression;
 }
 
@@ -163,7 +194,7 @@ export function getQuestionHints(question: {
       `${left}×${right}＝${product}，接着算 ${product}${mixed[3]}${operand}。${nextHint}`,
     ];
   }
-  const simple = expression.match(/^(\d+)\s*([+−×])\s*(\d+)$/);
+  const simple = expression.match(/^(\d+)\s*([+−×÷])\s*(\d+)$/);
   if (simple) {
     const a = Number(simple[1]),
       b = Number(simple[3]);
@@ -189,11 +220,29 @@ export function getQuestionHints(question: {
           : `从 ${a} 开始，往回数 ${b}。可以借助数轴检查。`,
       ];
     }
-    return [
-      `${a}×${b} 可以看成 ${a} 个 ${b} 相加。`,
-      `想一想乘法口诀。也可以先算 ${Math.max(0, a - 1)}×${b}，再加一个 ${b}。`,
-    ];
+    if (simple[2] === '×') {
+      return [
+        `${a}×${b} 可以看成 ${a} 个 ${b} 相加。`,
+        `想一想乘法口诀。也可以先算 ${Math.max(0, a - 1)}×${b}，再加一个 ${b}。`,
+      ];
+    }
+    if (simple[2] === '÷') {
+      return [
+        `${a}÷${b} 表示把 ${a} 平均分成 ${b} 份，每份是多少。`,
+        `想一想除法口诀：几乘${b}等于${a}？用乘法口诀反推。`,
+      ];
+    }
   }
+  if (question.level === 'divisionMeaning')
+    return [
+      '除法表示平均分。先找总数，再找平均分成几份。',
+      '除法和乘法互为逆运算。如果不会算除法，可以试着用乘法检验。',
+    ];
+  if (question.level === 'mixedWordProblem')
+    return [
+      '先读清楚题目，找出已知的数和要求的数。',
+      '这道题需要分几步计算？先算什么，再算什么？把每一步写下来。',
+    ];
   if (question.level === 'abacusMove' || question.level === 'abacusMatch')
     return [
       '先看靠梁的珠子：一颗上珠表示 5，一颗下珠表示 1。',

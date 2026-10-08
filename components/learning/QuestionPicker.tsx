@@ -12,6 +12,10 @@ const groups: { name: string; levels: Level[] }[] = [
     levels: ['multiplyMeaning', 'multiplyFacts', 'multiplyMixed'],
   },
   {
+    name: '除法与应用',
+    levels: ['divisionMeaning', 'divisionFacts', 'mixedWordProblem'],
+  },
+  {
     name: '珠心算',
     levels: ['abacusMove', 'abacusMatch', 'abacusCalculation'],
   },
@@ -155,10 +159,6 @@ export function QuestionPicker({
           连线题至少需要 2 道，才能配成一组。
         </p>
       )}
-      <ModePicker
-        value={value.mode}
-        onChange={(mode) => onChange({ ...value, mode })}
-      />
     </div>
   );
 }

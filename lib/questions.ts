@@ -5,6 +5,9 @@ export type Level =
   | 'multiplyMeaning'
   | 'multiplyFacts'
   | 'multiplyMixed'
+  | 'divisionMeaning'
+  | 'divisionFacts'
+  | 'mixedWordProblem'
   | 'abacusMove'
   | 'abacusMatch'
   | 'abacusCalculation';
@@ -302,6 +305,142 @@ export function makeQuestionsForCounts(
     });
   }
 
+  const usedDivisionMeanings = new Set<string>();
+  while (usedDivisionMeanings.size < counts.divisionMeaning) {
+    const dividend = int(2, 9) * int(2, 9);
+    const divisor = int(2, 9);
+    if (dividend % divisor !== 0) continue;
+    const quotient = dividend / divisor;
+    const kind = usedDivisionMeanings.size % 6;
+    let expression: string;
+    let answer: number;
+
+    if (kind === 0) {
+      expression = `把 ${dividend} 个苹果平均分给 ${divisor} 个小朋友，每人分到 □ 个`;
+      answer = quotient;
+    } else if (kind === 1) {
+      expression = `${dividend} ÷ ${divisor} = □`;
+      answer = quotient;
+    } else if (kind === 2) {
+      expression = `${dividend} 里面有 □ 个 ${divisor}`;
+      answer = quotient;
+    } else if (kind === 3) {
+      expression = `每组 ${divisor} 个，${dividend} 个可以分成 □ 组`;
+      answer = quotient;
+    } else if (kind === 4) {
+      expression = `${dividend} ÷ ${divisor} = ${quotient}，被除数是 ${dividend}，除数是 □`;
+      answer = divisor;
+    } else {
+      expression = `有 ${dividend} 本书，每 ${divisor} 本放一摞，可以放 □ 摞`;
+      answer = quotient;
+    }
+
+    if (usedDivisionMeanings.has(expression)) continue;
+    usedDivisionMeanings.add(expression);
+    questions.push({
+      id: `divisionMeaning-${usedDivisionMeanings.size}`,
+      level: 'divisionMeaning',
+      expression,
+      answer,
+    });
+  }
+
+  const usedDivisionFacts = new Set<string>();
+  while (usedDivisionFacts.size < counts.divisionFacts) {
+    const divisor = int(2, 9);
+    const quotient = int(2, 9);
+    const dividend = divisor * quotient;
+    const expression = `${dividend} ÷ ${divisor}`;
+    if (usedDivisionFacts.has(expression)) continue;
+    usedDivisionFacts.add(expression);
+    questions.push({
+      id: `divisionFacts-${usedDivisionFacts.size}`,
+      level: 'divisionFacts',
+      expression,
+      answer: quotient,
+    });
+  }
+
+  const usedWordProblems = new Set<string>();
+  while (usedWordProblems.size < counts.mixedWordProblem) {
+    const problemType = usedWordProblems.size % 8;
+    let expression: string;
+    let answer: number;
+
+    if (problemType === 0) {
+      const total = int(3, 6) * int(3, 6);
+      const days = int(2, 5);
+      const perDay = total / days;
+      if (total % days !== 0) continue;
+      expression = `妈妈准备制作 ${total} 张剪纸，每天剪 ${perDay} 张，需要 □ 天完成`;
+      answer = days;
+    } else if (problemType === 1) {
+      const total = int(3, 9) * int(3, 6);
+      const people = int(3, 6);
+      if (total % people !== 0) continue;
+      const perPerson = total / people;
+      expression = `有 ${total} 本故事书，平均分给 ${people} 个好朋友，每人分得 □ 本`;
+      answer = perPerson;
+    } else if (problemType === 2) {
+      const baskets = int(3, 8);
+      const perBasket = int(4, 8);
+      const total = baskets * perBasket;
+      const eaten = int(perBasket, Math.min(total - 1, perBasket * 2));
+      expression = `每筐有 ${perBasket} 个桃子，有 ${baskets} 筐，一共有 ${total} 个，已经吃了 ${eaten} 个，还有 □ 个桃子`;
+      answer = total - eaten;
+    } else if (problemType === 3) {
+      const storyBooks = int(10, 20);
+      const techBooks = int(6, 15);
+      const total = storyBooks + techBooks;
+      const classes = int(3, 5);
+      if (total % classes !== 0) continue;
+      const perClass = total / classes;
+      expression = `学校买了 ${storyBooks} 本故事书和 ${techBooks} 本科技书，平均分给 ${classes} 个班，每班分得 □ 本书`;
+      answer = perClass;
+    } else if (problemType === 4) {
+      const workers = int(3, 5);
+      const sheetsPerWorker = int(2, 4);
+      const posters = int(2, 4);
+      const total = workers * sheetsPerWorker;
+      const perPoster = total / posters;
+      if (total % posters !== 0) continue;
+      expression = `${workers} 名工作人员每人要贴 ${sheetsPerWorker} 张反诈防骗宣传单到社区宣传栏，平均每个宣传栏上要贴 □ 张`;
+      answer = perPoster;
+    } else if (problemType === 5) {
+      const a = int(10, 30);
+      const b = int(3, 12);
+      const sum = a + b;
+      expression = `25 ÷ △ = △，○ + ○ + ○ + ○ + ○ + ○ + △ = 23，△ = □，○ = □`;
+      answer = 5;
+    } else if (problemType === 6) {
+      const people = int(8, 15);
+      const bowlsPerPerson = int(1, 2);
+      const platesPerPeople = int(2, 4);
+      const vegBowls = int(2, 4);
+      const soupBowls = int(1, 3);
+      const totalBowls = people * bowlsPerPerson;
+      const totalNeeded = totalBowls + vegBowls + soupBowls;
+      expression = `${people} 人吃饭，每人一个饭碗，每 ${platesPerPeople} 人共用一个菜碗，每 ${Math.max(3, platesPerPeople + 1)} 人共用一个汤碗，共需要 □ 个碗`;
+      answer = totalNeeded;
+    } else {
+      const mountaineers = int(8, 16);
+      const pansPerGroup = int(2, 3);
+      const groupSize = int(2, 4);
+      const groups = Math.ceil(mountaineers / groupSize);
+      expression = `穿山甲是国家一级保护动物，数量稀少，栖息于山洞洞穴内。（穿山甲描述）住在 ${mountaineers} 只穿山甲，${groupSize} 只穿山甲住一个洞穴，一共住了 □ 个洞穴`;
+      answer = groups;
+    }
+
+    if (usedWordProblems.has(expression)) continue;
+    usedWordProblems.add(expression);
+    questions.push({
+      id: `mixedWordProblem-${usedWordProblems.size}`,
+      level: 'mixedWordProblem',
+      expression,
+      answer,
+    });
+  }
+
   const usedMoves = new Set<string>();
   const moveQuota = weightedQuota(counts.abacusMove);
   const moveKinds: Array<'crossFive' | 'crossTen' | 'regular'> = [];
@@ -433,6 +572,9 @@ export function makeQuestions(seed: number): Question[] {
       multiplyMeaning: 0,
       multiplyFacts: 0,
       multiplyMixed: 0,
+      divisionMeaning: 0,
+      divisionFacts: 0,
+      mixedWordProblem: 0,
       abacusMove: 0,
       abacusMatch: 0,
       abacusCalculation: 0,

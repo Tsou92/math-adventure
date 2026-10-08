@@ -50,6 +50,9 @@ function recordRound(record: RecordItem): Round {
       multiplyMeaning: record.multiply_meaning_count,
       multiplyFacts: record.multiply_facts_count,
       multiplyMixed: record.multiply_mixed_count ?? 0,
+      divisionMeaning: record.division_meaning_count ?? 0,
+      divisionFacts: record.division_facts_count ?? 0,
+      mixedWordProblem: record.mixed_word_problem_count ?? 0,
       abacusMove: record.abacus_move_count,
       abacusMatch: record.abacus_match_count,
       abacusCalculation: record.abacus_calculation_count,
@@ -162,11 +165,6 @@ export default function ChildDashboard({
       intentRef.current = null;
       setRound(data.round);
       navigate('practice');
-      const started = await api<{ round: Round }>(
-        `rounds/${data.round.id}/start`,
-        { method: 'POST' },
-      );
-      setRound(started.round);
     } catch (issue) {
       setError(issue instanceof Error ? issue.message : '无法开始，请重试');
       try {
