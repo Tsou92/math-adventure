@@ -17,9 +17,9 @@ export function db() {
   return client;
 }
 
-const CONNECTION_TIMEOUT_MS = 10_000;
-const QUERY_TIMEOUT_MS = 15_000;
-const IDLE_IN_TRANSACTION_TIMEOUT_MS = 15_000;
+const CONNECTION_TIMEOUT_MS = 5_000; // 从 10s 降低到 5s
+const QUERY_TIMEOUT_MS = 10_000; // 从 15s 降低到 10s
+const IDLE_IN_TRANSACTION_TIMEOUT_MS = 10_000; // 从 15s 降低到 10s
 
 export interface TransactionQueryResult<R = Record<string, unknown>> {
   rows: R[];

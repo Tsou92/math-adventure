@@ -2,6 +2,13 @@
   "buildCommand": "npm run build:vercel",
   "outputDirectory": "vercel-dist",
   "framework": null,
+  "regions": ["iad1"],
+  "functions": {
+    "api/**/*.ts": {
+      "maxDuration": 10,
+      "memory": 1024
+    }
+  },
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api?path=:path*" }
   ],
