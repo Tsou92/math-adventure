@@ -2220,7 +2220,8 @@ progress::-webkit-progress-value {
   border-radius: 22px;
 }
 .practice-unit:has(.abacus-match-board),
-.practice-unit:has(.abacus-move-card) {
+.practice-unit:has(.abacus-move-card),
+.practice-unit:has(.word-problem-card) {
   grid-column: 1/-1;
 }
 .unit-heading {
