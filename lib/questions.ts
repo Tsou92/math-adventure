@@ -368,17 +368,15 @@ export function makeQuestionsForCounts(
     let answer: number;
 
     if (problemType === 0) {
-      const total = int(3, 6) * int(3, 6);
       const days = int(2, 5);
-      const perDay = total / days;
-      if (total % days !== 0) continue;
+      const perDay = int(3, 9);
+      const total = days * perDay;
       expression = `妈妈准备制作 ${total} 张剪纸，每天剪 ${perDay} 张，需要 □ 天完成`;
       answer = days;
     } else if (problemType === 1) {
-      const total = int(3, 9) * int(3, 6);
       const people = int(3, 6);
-      if (total % people !== 0) continue;
-      const perPerson = total / people;
+      const perPerson = int(3, 9);
+      const total = people * perPerson;
       expression = `有 ${total} 本故事书，平均分给 ${people} 个好朋友，每人分得 □ 本`;
       answer = perPerson;
     } else if (problemType === 2) {
@@ -389,45 +387,42 @@ export function makeQuestionsForCounts(
       expression = `每筐有 ${perBasket} 个桃子，有 ${baskets} 筐，一共有 ${total} 个，已经吃了 ${eaten} 个，还有 □ 个桃子`;
       answer = total - eaten;
     } else if (problemType === 3) {
-      const storyBooks = int(10, 20);
-      const techBooks = int(6, 15);
-      const total = storyBooks + techBooks;
       const classes = int(3, 5);
-      if (total % classes !== 0) continue;
-      const perClass = total / classes;
+      const perClass = int(5, 10);
+      const total = classes * perClass;
+      const storyBooks = int(Math.floor(total * 0.4), Math.floor(total * 0.7));
+      const techBooks = total - storyBooks;
       expression = `学校买了 ${storyBooks} 本故事书和 ${techBooks} 本科技书，平均分给 ${classes} 个班，每班分得 □ 本书`;
       answer = perClass;
     } else if (problemType === 4) {
-      const workers = int(3, 5);
-      const sheetsPerWorker = int(2, 4);
       const posters = int(2, 4);
-      const total = workers * sheetsPerWorker;
-      const perPoster = total / posters;
-      if (total % posters !== 0) continue;
+      const perPoster = int(2, 5);
+      const total = posters * perPoster;
+      const workers = int(2, Math.min(5, total));
+      const sheetsPerWorker = total / workers;
       expression = `${workers} 名工作人员每人要贴 ${sheetsPerWorker} 张反诈防骗宣传单到社区宣传栏，平均每个宣传栏上要贴 □ 张`;
       answer = perPoster;
     } else if (problemType === 5) {
-      const a = int(10, 30);
-      const b = int(3, 12);
-      const sum = a + b;
+      const triangleValue = int(3, 5);
+      const circleValue = int(2, 3);
       expression = `25 ÷ △ = △，○ + ○ + ○ + ○ + ○ + ○ + △ = 23，△ = □，○ = □`;
       answer = 5;
     } else if (problemType === 6) {
       const people = int(8, 15);
-      const bowlsPerPerson = int(1, 2);
-      const platesPerPeople = int(2, 4);
-      const vegBowls = int(2, 4);
-      const soupBowls = int(1, 3);
-      const totalBowls = people * bowlsPerPerson;
-      const totalNeeded = totalBowls + vegBowls + soupBowls;
-      expression = `${people} 人吃饭，每人一个饭碗，每 ${platesPerPeople} 人共用一个菜碗，每 ${Math.max(3, platesPerPeople + 1)} 人共用一个汤碗，共需要 □ 个碗`;
+      const bowlsPerPerson = 1;
+      const vegPlatesPerPeople = int(2, 3);
+      const soupBowlsPerPeople = int(3, 4);
+      const totalNeeded =
+        people +
+        Math.ceil(people / vegPlatesPerPeople) +
+        Math.ceil(people / soupBowlsPerPeople);
+      expression = `${people} 人吃饭，每人一个饭碗，每 ${vegPlatesPerPeople} 人共用一个菜碗，每 ${soupBowlsPerPeople} 人共用一个汤碗，共需要 □ 个碗`;
       answer = totalNeeded;
     } else {
-      const mountaineers = int(8, 16);
-      const pansPerGroup = int(2, 3);
       const groupSize = int(2, 4);
-      const groups = Math.ceil(mountaineers / groupSize);
-      expression = `穿山甲是国家一级保护动物，数量稀少，栖息于山洞洞穴内。（穿山甲描述）住在 ${mountaineers} 只穿山甲，${groupSize} 只穿山甲住一个洞穴，一共住了 □ 个洞穴`;
+      const groups = int(3, 6);
+      const mountaineers = groups * groupSize;
+      expression = `有 ${mountaineers} 只穿山甲，${groupSize} 只穿山甲住一个洞穴，一共住了 □ 个洞穴`;
       answer = groups;
     }
 

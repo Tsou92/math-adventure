@@ -157,8 +157,9 @@ async function insertRoundWithQuestions(
   await tx.query(
     `INSERT INTO kousuan.practice_rounds (id, user_id, family_id, idempotency_key, source, package_name, mode,
       starter_count, explorer_count, challenger_count, multiply_meaning_count, multiply_facts_count, multiply_mixed_count,
+      division_meaning_count, division_facts_count, mixed_word_problem_count,
       abacus_move_count, abacus_match_count, abacus_calculation_count, total_count, seed)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)`,
     [
       input.roundId,
       input.userId,
@@ -173,6 +174,9 @@ async function insertRoundWithQuestions(
       input.counts.multiplyMeaning,
       input.counts.multiplyFacts,
       input.counts.multiplyMixed,
+      input.counts.divisionMeaning,
+      input.counts.divisionFacts,
+      input.counts.mixedWordProblem,
       input.counts.abacusMove,
       input.counts.abacusMatch,
       input.counts.abacusCalculation,
