@@ -30,7 +30,7 @@ async function diagnoseLatency() {
   // 测试 3：合并查询（新优化）
   const testKey = randomUUID();
   const t3 = Date.now();
-  const result = await sql`
+  await sql`
     WITH user_lock AS (
       SELECT id, family_id FROM kousuan.users WHERE id = ${userId} FOR UPDATE
     ),
