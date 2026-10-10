@@ -1,6 +1,43 @@
-# 数学星球
+<p align="center">
+  <img src="public/og.png" alt="数学星球" width="720">
+</p>
 
-儿童数学练习应用，包含家长与孩子账号、自选题目、进位退位乘法、算盘练习、自动保存、学习进度、成绩与错题复习。线上使用 Vercel 静态前端和 Node API，数据库为 Neon PostgreSQL。
+<h1 align="center">数学星球</h1>
+
+<p align="center">
+  给小学低年级孩子的口算与应用题练习：自由组合题型、应用题分步引导、错题按时复习，家长随时查看进步。
+</p>
+
+<p align="center">
+  <a href="https://github.com/Tsou92/math-adventure/actions/workflows/ci.yml"><img src="https://github.com/Tsou92/math-adventure/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white" alt="React 19">
+  <img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white" alt="TypeScript 5">
+  <img src="https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white" alt="Vite 8">
+  <img src="https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white" alt="Tailwind CSS 4">
+  <img src="https://img.shields.io/badge/Neon-PostgreSQL-00E599?logo=postgresql&logoColor=white" alt="Neon PostgreSQL">
+  <img src="https://img.shields.io/badge/Vercel-deployed-000000?logo=vercel&logoColor=white" alt="Vercel">
+</p>
+
+## 功能
+
+- 12 种题型自由组合：10 以内到 100 以内的进退位加减、乘法启蒙、表内乘法、乘法后加减、除法启蒙、表内除法、乘除应用题，以及三种珠心算练习，每轮 1～100 道。
+- 应用题分步引导：先列算式，再选算式的含义，最后算出答案，练的是读懂题目，而不只是填一个数。
+- 两种练法：轻松练习可以逐题检查、看提示；计时挑战做完后统一批改。
+- 答题自动保存，刷新页面或退出后回来可以接着做。
+- 答错的题会进入「再挑战」，按间隔安排复习，连续答对才算掌握。
+- 家长账号管理孩子账号，随时查看练习记录和成绩。
+
+线上使用 Vercel 静态前端和 Node API，数据库为 Neon PostgreSQL。
+
+## 界面预览
+
+截图中的姓名和练习记录均为虚构的演示数据。
+
+| 孩子首页 | 应用题分步引导 |
+| :---: | :---: |
+| <img src="docs/screenshots/home.png" alt="孩子首页" width="400"> | <img src="docs/screenshots/practice.png" alt="应用题分步引导" width="400"> |
+| **我的进步** | **家长中心** |
+| <img src="docs/screenshots/progress.png" alt="我的进步" width="400"> | <img src="docs/screenshots/parent.png" alt="家长中心" width="400"> |
 
 ## 本地开发
 
