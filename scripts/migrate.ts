@@ -8,7 +8,8 @@ const sql = neon(databaseUrl);
 const migrationsUrl = new URL('../db/migrations/', import.meta.url);
 const requested = process.argv.slice(2);
 
-// 确保迁移追踪表存在
+// 确保迁移追踪表存在（全新数据库要先建 schema）
+await sql`CREATE SCHEMA IF NOT EXISTS kousuan`;
 await sql`
   CREATE TABLE IF NOT EXISTS kousuan.schema_migrations (
     filename TEXT PRIMARY KEY,
