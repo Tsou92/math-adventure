@@ -10,6 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/Tsou92/math-adventure/actions/workflows/ci.yml"><img src="https://github.com/Tsou92/math-adventure/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white" alt="React 19">
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white" alt="TypeScript 5">
   <img src="https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white" alt="Vite 8">
@@ -93,3 +94,7 @@ TEST_DATABASE_URL='postgres://postgres:password@127.0.0.1:5432/math_adventure_te
 - `server/dev-api.ts`：本地 Node 请求与 Vercel handler 的适配。
 
 保存、开始、交卷、放弃都会锁定同一轮次，再读取状态与答案。已完成轮次的重复交卷返回原成绩；同一出题意图复用幂等键。修改密码在事务中撤销旧会话并生成新会话，恢复码改密也先锁定账号再撤销会话，提交成功后才设置 Cookie；创建登录会话时锁定账号并复核密码哈希，避免旧密码验证请求在改密后生成会话。
+
+## 许可证
+
+本项目采用 [MIT 许可证](LICENSE)。
