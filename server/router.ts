@@ -378,6 +378,9 @@ function serializeRound(round: Row, questions: Row[]) {
       multiplyMeaning: round.multiply_meaning_count,
       multiplyFacts: round.multiply_facts_count,
       multiplyMixed: round.multiply_mixed_count ?? 0,
+      divisionMeaning: round.division_meaning_count ?? 0,
+      divisionFacts: round.division_facts_count ?? 0,
+      mixedWordProblem: round.mixed_word_problem_count ?? 0,
       abacusMove: round.abacus_move_count,
       abacusMatch: round.abacus_match_count,
       abacusCalculation: round.abacus_calculation_count,
@@ -547,7 +550,8 @@ async function records(req: VercelRequest, res: VercelResponse) {
   const user = await requireUser(req, ['child']);
   const rows = await db()`WITH recent AS (
       SELECT id, package_name, starter_count, explorer_count, challenger_count,
-        multiply_meaning_count, multiply_facts_count, multiply_mixed_count, abacus_move_count,
+        multiply_meaning_count, multiply_facts_count, multiply_mixed_count,
+        division_meaning_count, division_facts_count, mixed_word_problem_count, abacus_move_count,
         abacus_match_count, abacus_calculation_count, total_count,
         score, correct_count, duration_seconds, started_at, completed_at, mode
       FROM kousuan.practice_rounds
@@ -572,6 +576,7 @@ async function records(req: VercelRequest, res: VercelResponse) {
     LEFT JOIN kousuan.practice_answers a ON a.question_id = q.id
     GROUP BY recent.id, recent.package_name, recent.starter_count, recent.explorer_count,
       recent.challenger_count, recent.multiply_meaning_count, recent.multiply_facts_count, recent.multiply_mixed_count,
+      recent.division_meaning_count, recent.division_facts_count, recent.mixed_word_problem_count,
       recent.abacus_move_count, recent.abacus_match_count, recent.abacus_calculation_count,
       recent.total_count, recent.score, recent.correct_count,
       recent.duration_seconds, recent.started_at, recent.completed_at, recent.mode

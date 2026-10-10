@@ -436,6 +436,9 @@ function roundResult(round: RoundRow): Row {
     completed_at: round.completed_at,
     mode: round.mode,
     multiply_mixed_count: round.multiply_mixed_count,
+    division_meaning_count: round.division_meaning_count,
+    division_facts_count: round.division_facts_count,
+    mixed_word_problem_count: round.mixed_word_problem_count,
   };
 }
 
@@ -525,7 +528,8 @@ export async function submitRound(
         SET status = 'completed', score = $3, correct_count = $4, completed_at = now(),
           duration_seconds = greatest(0, extract(epoch from (now() - started_at))::int)
         WHERE id = $1 AND user_id = $2 AND status = 'started'
-        RETURNING score, correct_count, total_count, duration_seconds, completed_at, mode, multiply_mixed_count`,
+        RETURNING score, correct_count, total_count, duration_seconds, completed_at, mode, multiply_mixed_count,
+          division_meaning_count, division_facts_count, mixed_word_problem_count`,
       [roundId, userId, score, correct.length],
     );
     if (!updated.rows[0]) throw httpError(409, '这轮练习不在答题中');
