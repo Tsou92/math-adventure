@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { makeQuestionsForCounts, normalizeQuestionCount } from './questions';
+import {
+  makeQuestionsForCounts,
+  normalizeQuestionCount,
+  type WordProblemPrompt,
+} from './questions';
 import { emptyCounts } from './learning';
 
 describe('makeQuestionsForCounts', () => {
@@ -472,5 +476,88 @@ describe('makeQuestionsForCounts', () => {
       }
       expect(question.answer).toBe(value);
     }
+  });
+
+  it('除法题只出表内除法：除数和商都在 2～9，且能整除', () => {
+    const inTable = (n: number) => Number.isInteger(n) && n >= 2 && n <= 9;
+    const bad: string[] = [];
+    for (let seed = 1; seed <= 200; seed += 1) {
+      const questions = makeQuestionsForCounts(seed, {
+        ...emptyCounts,
+        divisionMeaning: 25,
+        divisionFacts: 25,
+      });
+      expect(questions).toHaveLength(50);
+      for (const question of questions) {
+        // 题面里最大的数是被除数，其余数字（除数、商）和答案都必须在 2～9
+        const numbers = (question.expression.match(/\d+/g) ?? []).map(Number);
+        const dividend = Math.max(...numbers);
+        const others = numbers.filter((n) => n !== dividend);
+        const ok =
+          inTable(question.answer) &&
+          others.every(inTable) &&
+          dividend % question.answer === 0 &&
+          inTable(dividend / question.answer);
+        if (!ok) bad.push(`${question.expression} → ${question.answer}`);
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it('乘除应用题不出两位数商和除不尽，最后一步答案与判分一致', () => {
+    const tableDivision = (a: number, b: number) =>
+      a % b === 0 && b >= 2 && b <= 9 && a / b >= 2 && a / b <= 9;
+    const bad: string[] = [];
+    // 每轮 50 题会让每种题型出现多次，原来固定文案的图形题会在这里卡死
+    for (let seed = 1; seed <= 30; seed += 1) {
+      const questions = makeQuestionsForCounts(seed, {
+        ...emptyCounts,
+        mixedWordProblem: 50,
+      });
+      expect(questions).toHaveLength(50);
+      for (const question of questions) {
+        const prompt = question.promptData as WordProblemPrompt;
+        const texts = [
+          prompt.story,
+          ...prompt.steps.flatMap((step) => [
+            step.prompt,
+            String(step.correctAnswer ?? ''),
+            ...(step.options ?? []),
+          ]),
+        ].join('\n');
+        if (/\d\.\d/.test(texts)) bad.push(`小数：${prompt.story}`);
+
+        const divisions: Array<[number, number]> = [];
+        for (const m of texts.matchAll(/(\d+)\s*÷\s*(\d+)/g))
+          divisions.push([Number(m[1]), Number(m[2])]);
+        for (const m of texts.matchAll(
+          /\((\d+)\s*([+×])\s*(\d+)\)\s*÷\s*(\d+)/g,
+        )) {
+          const a = Number(m[1]);
+          const b = Number(m[3]);
+          divisions.push([m[2] === '+' ? a + b : a * b, Number(m[4])]);
+        }
+        const bowls = prompt.story.match(
+          /^(\d+) 人吃饭.*每 (\d+) 人共用一个菜碗，每 (\d+) 人共用一个汤碗/,
+        );
+        if (bowls) {
+          divisions.push([Number(bowls[1]), Number(bowls[2])]);
+          divisions.push([Number(bowls[1]), Number(bowls[3])]);
+        }
+        const shapes = prompt.story.match(/÷ △ = △，(.+) \+ △ = (\d+)，/);
+        if (shapes) {
+          const triangle = Number(prompt.steps[0].correctAnswer);
+          const circleCount = (shapes[1] ?? '').split('○').length - 1;
+          divisions.push([Number(shapes[2]) - triangle, circleCount]);
+        }
+        for (const [a, b] of divisions)
+          if (!tableDivision(a, b)) bad.push(`${a}÷${b}：${prompt.story}`);
+
+        expect(Number.isInteger(question.answer)).toBe(true);
+        if (question.answer !== prompt.steps.at(-1)?.correctAnswer)
+          bad.push(`判分不一致：${prompt.story}`);
+      }
+    }
+    expect(bad).toEqual([]);
   });
 });

@@ -321,10 +321,9 @@ export function makeQuestionsForCounts(
 
   const usedDivisionMeanings = new Set<string>();
   while (usedDivisionMeanings.size < counts.divisionMeaning) {
-    const dividend = int(2, 9) * int(2, 9);
     const divisor = int(2, 9);
-    if (dividend % divisor !== 0) continue;
-    const quotient = dividend / divisor;
+    const quotient = int(2, 9);
+    const dividend = divisor * quotient;
     const kind = usedDivisionMeanings.size % 6;
     let expression: string;
     let answer: number;
@@ -397,11 +396,11 @@ export function makeQuestionsForCounts(
           type: 'meaning',
           prompt: `这个算式 ${total} ÷ ${perDay} 表示什么意思？`,
           options: [
-            `把 ${total} 平均分成 ${perDay} 份，每份是多少`,
+            `${total} 里面有几个 ${perDay}`,
             `${total} 个 ${perDay} 相加`,
             `${perDay} 个 ${total} 相加`,
           ],
-          correctAnswer: `把 ${total} 平均分成 ${perDay} 份，每份是多少`,
+          correctAnswer: `${total} 里面有几个 ${perDay}`,
         },
         {
           type: 'calculate',
@@ -470,7 +469,7 @@ export function makeQuestionsForCounts(
       finalAnswer = remaining;
     } else if (problemType === 3) {
       const classes = int(3, 5);
-      const perClass = int(5, 10);
+      const perClass = int(5, 9);
       const total = classes * perClass;
       const storyBooks = int(Math.floor(total * 0.4), Math.floor(total * 0.7));
       const techBooks = total - storyBooks;
@@ -499,11 +498,14 @@ export function makeQuestionsForCounts(
       ];
       finalAnswer = perClass;
     } else if (problemType === 4) {
+      const workers = int(2, 5);
+      const sheetsPerWorker = int(2, 5);
+      const total = workers * sheetsPerWorker;
       const posters = int(2, 4);
-      const perPoster = int(2, 5);
-      const total = posters * perPoster;
-      const workers = int(2, Math.min(5, total));
-      const sheetsPerWorker = total / workers;
+      const perPoster = total / posters;
+      // 二年级只学表内除法：必须整除，商在 2～9
+      if (!Number.isInteger(perPoster) || perPoster < 2 || perPoster > 9)
+        continue;
       story = `${workers} 名工作人员每人要贴 ${sheetsPerWorker} 张反诈防骗宣传单到社区宣传栏，一共要贴到 ${posters} 个宣传栏，平均每个宣传栏上要贴多少张？`;
       steps = [
         {
@@ -529,36 +531,47 @@ export function makeQuestionsForCounts(
       ];
       finalAnswer = perPoster;
     } else if (problemType === 5) {
-      story = `25 ÷ △ = △，○ + ○ + ○ + ○ + ○ + ○ + △ = 23，求 △ 和 ○ 各是多少？`;
+      // 原来数字固定，第二次轮到时永远判重复导致死循环；改为随机数字。
+      const triangle = int(2, 9);
+      const circle = int(2, 9);
+      const circleCount = int(2, 6);
+      const square = triangle * triangle;
+      const sum = circleCount * circle + triangle;
+      const circles = Array.from({ length: circleCount }, () => '○').join(' + ');
+      story = `${square} ÷ △ = △，${circles} + △ = ${sum}，求 △ 和 ○ 各是多少？`;
       steps = [
         {
           type: 'expression',
-          prompt: '第一步：从 25 ÷ △ = △ 可以推出 △ 是多少？',
-          correctAnswer: `5`,
+          prompt: `第一步：从 ${square} ÷ △ = △ 可以推出 △ 是多少？`,
+          correctAnswer: `${triangle}`,
         },
         {
           type: 'meaning',
-          prompt: '为什么 △ = 5？',
+          prompt: `为什么 △ = ${triangle}？`,
           options: [
-            '因为 25 ÷ 5 = 5',
-            '因为 25 - 5 = 20',
-            '因为 5 × 5 = 25',
+            `因为 ${square} ÷ ${triangle} = ${triangle}`,
+            `因为 ${square} − ${triangle} = ${square - triangle}`,
+            `因为 ${triangle} + ${triangle} = ${triangle * 2}`,
           ],
-          correctAnswer: '因为 25 ÷ 5 = 5',
+          correctAnswer: `因为 ${square} ÷ ${triangle} = ${triangle}`,
         },
         {
           type: 'calculate',
-          prompt: '已知 △ = 5，从 6个○ + △ = 23 算出 ○ = ?',
-          correctAnswer: 3,
+          prompt: `已知 △ = ${triangle}，从 ${circleCount} 个○ + △ = ${sum} 算出 ○ = ?`,
+          correctAnswer: circle,
         },
       ];
-      finalAnswer = 5;
+      // 最后一步问的是 ○，判分答案必须和它一致。
+      finalAnswer = circle;
     } else if (problemType === 6) {
-      const people = int(8, 15);
+      // 人数取两个共用数的公倍数，保证菜碗、汤碗都能整除
       const vegPlatesPerPeople = int(2, 3);
       const soupBowlsPerPeople = int(3, 4);
-      const vegBowls = Math.ceil(people / vegPlatesPerPeople);
-      const soupBowls = Math.ceil(people / soupBowlsPerPeople);
+      const vegBowls = int(2, 9);
+      const people = vegPlatesPerPeople * vegBowls;
+      if (people % soupBowlsPerPeople !== 0) continue;
+      const soupBowls = people / soupBowlsPerPeople;
+      if (soupBowls < 2 || soupBowls > 9) continue;
       const totalNeeded = people + vegBowls + soupBowls;
       story = `${people} 人吃饭，每人一个饭碗，每 ${vegPlatesPerPeople} 人共用一个菜碗，每 ${soupBowlsPerPeople} 人共用一个汤碗，共需要多少个碗？`;
       steps = [
