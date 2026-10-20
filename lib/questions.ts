@@ -1,7 +1,7 @@
 import {
   makeWordProblemSpecs,
   type WordProblemV2Prompt,
-} from './word-problems';
+} from './word-problems.js';
 
 export type Level =
   | 'starter'
