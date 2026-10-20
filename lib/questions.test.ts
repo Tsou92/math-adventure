@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   makeQuestionsForCounts,
   normalizeQuestionCount,
-  type WordProblemPrompt,
 } from './questions';
+import { asWordProblemV2Prompt } from './word-problems';
 import { emptyCounts } from './learning';
 
 describe('makeQuestionsForCounts', () => {
@@ -504,9 +504,13 @@ describe('makeQuestionsForCounts', () => {
     expect(bad).toEqual([]);
   });
 
-  it('乘除应用题不出两位数商和除不尽，最后一步答案与判分一致', () => {
+  it('乘除应用题不出两位数商和除不尽，答案与所求问题、单位一致', () => {
     const tableDivision = (a: number, b: number) =>
       a % b === 0 && b >= 2 && b <= 9 && a / b >= 2 && a / b <= 9;
+    const firstNumber = (text: string) => {
+      const match = text.match(/\d+/);
+      return match ? Number(match[0]) : Number.NaN;
+    };
     const bad: string[] = [];
     // 每轮 50 题会让每种题型出现多次，原来固定文案的图形题会在这里卡死
     for (let seed = 1; seed <= 30; seed += 1) {
@@ -516,46 +520,47 @@ describe('makeQuestionsForCounts', () => {
       });
       expect(questions).toHaveLength(50);
       for (const question of questions) {
-        const prompt = question.promptData as WordProblemPrompt;
-        const texts = [
-          prompt.story,
-          ...prompt.steps.flatMap((step) => [
-            step.prompt,
-            String(step.correctAnswer ?? ''),
-            ...(step.options ?? []),
-          ]),
-        ].join('\n');
+        const prompt = asWordProblemV2Prompt(question.promptData);
+        if (!prompt) {
+          bad.push(`不是新版应用题：${question.expression}`);
+          continue;
+        }
+        const texts = prompt.parts.map((part) => part.text).join('\n');
         if (/\d\.\d/.test(texts)) bad.push(`小数：${prompt.story}`);
-
-        const divisions: Array<[number, number]> = [];
-        for (const m of texts.matchAll(/(\d+)\s*÷\s*(\d+)/g))
-          divisions.push([Number(m[1]), Number(m[2])]);
-        for (const m of texts.matchAll(
-          /\((\d+)\s*([+×])\s*(\d+)\)\s*÷\s*(\d+)/g,
-        )) {
-          const a = Number(m[1]);
-          const b = Number(m[3]);
-          divisions.push([m[2] === '+' ? a + b : a * b, Number(m[4])]);
-        }
-        const bowls = prompt.story.match(
-          /^(\d+) 人吃饭.*每 (\d+) 人共用一个菜碗，每 (\d+) 人共用一个汤碗/,
+        const conditionTexts = prompt.conditionIds.map((id) => {
+          const part = prompt.parts.find(
+            (item) => 'id' in item && item.id === id,
+          );
+          return part?.text ?? '';
+        });
+        const questionPart = prompt.parts.find(
+          (part) => 'id' in part && part.id === prompt.questionId,
         );
-        if (bowls) {
-          divisions.push([Number(bowls[1]), Number(bowls[2])]);
-          divisions.push([Number(bowls[1]), Number(bowls[3])]);
+        if (!questionPart || !questionPart.text.includes(prompt.answerUnit))
+          bad.push(`问题单位不一致：${prompt.story}`);
+        if (prompt.kind === 'multiplyTotal') {
+          const [a, b] = conditionTexts.map(firstNumber);
+          if (!(a >= 2 && a <= 9 && b >= 2 && b <= 9))
+            bad.push(`乘法因数越界：${prompt.story}`);
+          else if (question.answer !== a * b)
+            bad.push(`乘法答案不一致：${prompt.story}`);
+        } else if (
+          prompt.kind === 'divisionShare' ||
+          prompt.kind === 'divisionGroup'
+        ) {
+          const [total, divisor] = conditionTexts.map(firstNumber);
+          if (!tableDivision(total, divisor))
+            bad.push(`除法不表内：${prompt.story}`);
+          else if (question.answer !== total / divisor)
+            bad.push(`除法答案不一致：${prompt.story}`);
+        } else {
+          const perDay = firstNumber(conditionTexts[0] ?? '');
+          if (
+            prompt.hiddenCondition?.kind !== 'weekDays' ||
+            question.answer !== perDay * 7
+          )
+            bad.push(`星期题不一致：${prompt.story}`);
         }
-        const shapes = prompt.story.match(/÷ △ = △，(.+) \+ △ = (\d+)，/);
-        if (shapes) {
-          const triangle = Number(prompt.steps[0].correctAnswer);
-          const circleCount = (shapes[1] ?? '').split('○').length - 1;
-          divisions.push([Number(shapes[2]) - triangle, circleCount]);
-        }
-        for (const [a, b] of divisions)
-          if (!tableDivision(a, b)) bad.push(`${a}÷${b}：${prompt.story}`);
-
-        expect(Number.isInteger(question.answer)).toBe(true);
-        if (question.answer !== prompt.steps.at(-1)?.correctAnswer)
-          bad.push(`判分不一致：${prompt.story}`);
       }
     }
     expect(bad).toEqual([]);

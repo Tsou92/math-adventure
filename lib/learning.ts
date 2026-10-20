@@ -46,7 +46,7 @@ export const levelInfo: Record<
   },
   mixedWordProblem: {
     title: '乘除应用题',
-    subtitle: '实际场景的多步计算',
+    subtitle: '点条件 → 找隐藏条件 → 找问题 → 算答案',
     tone: 'emerald',
   },
   abacusMove: {

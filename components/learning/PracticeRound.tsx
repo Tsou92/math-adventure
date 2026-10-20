@@ -31,8 +31,8 @@ import {
   AbacusCalculationQuestion,
   AbacusMatchBoard,
   AbacusMoveQuestion,
-  WordProblemQuestion,
 } from './Questions';
+import { WordProblemQuestion } from './WordProblemQuestion';
 import { ErrorNotice, Modal } from './Shared';
 
 export type PracticeRoundHandle = {
@@ -224,6 +224,7 @@ export function PracticeRound({
         ) : q.level === 'mixedWordProblem' ? (
           <WordProblemQuestion
             onKeyDown={keyboard}
+            locked={inputsLocked}
             question={q}
             answer={answer}
             onAnswer={update}
