@@ -3051,3 +3051,449 @@ output.success-banner {
   gap: 12px;
   margin-top: 16px;
 }
+
+/* ── 乘除应用题 v2：点条件 → 找问题 → 填答案 ───────────────────────── */
+.wp-card {
+  min-width: 0;
+}
+
+.wp-flow {
+  min-width: 0;
+  border: 1px solid #e9e4fb;
+  border-radius: 20px;
+  background: linear-gradient(160deg, #fdfcff 0%, #faf8ff 58%, #fffaf2 100%);
+  padding: 16px;
+}
+
+/* fieldset 只承担 locked 语义，不引入浏览器默认边框与间距。 */
+.wp-fieldset {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  gap: 12px;
+}
+
+.wp-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wp-stage-label {
+  border-radius: 999px;
+  background: var(--planet-soft);
+  padding: 4px 11px;
+  color: var(--planet-primary-dark);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.wp-instruction {
+  margin: 0;
+  color: #4f5a70;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.6;
+}
+
+.wp-story {
+  min-width: 0;
+  border: 1px solid #eeeafb;
+  border-radius: 14px;
+  background: white;
+  padding: 13px 15px;
+  color: var(--planet-ink);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 2.1;
+  overflow-wrap: anywhere;
+}
+
+.wp-story .wp-text,
+.wp-part {
+  overflow-wrap: anywhere;
+}
+
+/* 所有可选片段在未点选时样式完全一致，不提前暴露对错。 */
+.wp-part {
+  border: 0;
+  border-bottom: 2px dashed #b7a9ee;
+  border-radius: 7px;
+  background: transparent;
+  padding: 2px 3px;
+  color: #3c4760;
+  font: inherit;
+  font-weight: 800;
+  line-height: 1.6;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.wp-part:hover:not(:disabled) {
+  background: var(--planet-soft);
+  color: var(--planet-primary-dark);
+}
+
+.wp-part:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.wp-part[aria-pressed='true'] {
+  border-bottom-color: var(--planet-primary);
+  background: #e7e1ff;
+  color: var(--planet-primary-dark);
+  box-shadow: inset 0 0 0 2px #c9bef5;
+}
+
+.wp-clue-toggle[aria-expanded='true'] {
+  border-bottom-color: #d89b1f;
+  background: #fff3d6;
+  color: #7a5610;
+}
+
+.wp-part-static {
+  border-bottom: 0;
+  padding: 0 1px;
+  cursor: default;
+}
+
+.wp-part-static:hover {
+  background: transparent;
+  color: inherit;
+}
+
+.wp-part-confirmed {
+  border-bottom: 2px solid #c4b9f1;
+  border-radius: 7px;
+  background: #f1edff;
+  padding: 2px 4px;
+  color: var(--planet-primary-dark);
+}
+
+.wp-part-question {
+  border-bottom-color: var(--planet-primary);
+  background: #e7e1ff;
+}
+
+.wp-clue-hint {
+  margin: 0;
+  border-left: 4px solid #f0c14b;
+  border-radius: 10px;
+  background: #fff9e8;
+  padding: 9px 12px;
+  color: #7a5a12;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.7;
+}
+
+.wp-hidden {
+  display: grid;
+  gap: 7px;
+  border: 1px dashed #d8cefb;
+  border-radius: 14px;
+  background: #fbfaff;
+  padding: 11px 13px;
+  color: #4e4770;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.wp-hidden input {
+  width: 100%;
+  min-height: 44px;
+  border: 2px solid #d8cefb;
+  border-radius: 11px;
+  background: white;
+  padding: 8px 12px;
+  color: var(--planet-ink);
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.wp-hidden input:focus {
+  border-color: var(--planet-primary);
+  outline: none;
+  box-shadow: 0 0 0 4px rgba(98, 80, 207, 0.14);
+}
+
+.wp-hidden-confirmed {
+  margin: 0;
+  color: var(--planet-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.wp-hidden-confirmed strong {
+  color: var(--planet-primary-dark);
+}
+
+.wp-feedback {
+  margin: 0;
+  border-radius: 11px;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.6;
+}
+
+.wp-feedback-error,
+.wp-check-feedback-error {
+  border: 1px solid #ffd3c6;
+  background: #fff5f1;
+  color: #b8503a;
+}
+
+.wp-feedback-success,
+.wp-check-feedback-success {
+  border: 1px solid #c9ecdc;
+  background: #f2fcf7;
+  color: #14705a;
+}
+
+.wp-feedback-progress {
+  border: 1px solid #ddd6fb;
+  background: #f7f5ff;
+  color: #5b4bb8;
+}
+
+.wp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.wp-button {
+  min-height: 44px;
+  flex: 0 1 auto;
+  border: 0;
+  border-radius: 13px;
+  padding: 9px 16px;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.2;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease;
+}
+
+.wp-button-back {
+  border: 1px solid var(--planet-line);
+  background: white;
+  color: #5f577e;
+}
+
+.wp-button-back:hover:not(:disabled) {
+  background: var(--planet-soft);
+  color: var(--planet-primary-dark);
+}
+
+.wp-button-next,
+.wp-button-check {
+  background: var(--planet-primary);
+  color: white;
+  box-shadow: 0 3px 0 var(--planet-primary-dark);
+}
+
+.wp-button-next:hover:not(:disabled),
+.wp-button-check:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.wp-button-next:active:not(:disabled),
+.wp-button-check:active:not(:disabled) {
+  box-shadow: none;
+  transform: translateY(2px);
+}
+
+.wp-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  box-shadow: none;
+}
+
+.wp-answer {
+  display: grid;
+  gap: 10px;
+  border-radius: 14px;
+  border: 1px solid #eeeafb;
+  background: white;
+  padding: 13px 15px;
+}
+
+.wp-answer-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.wp-answer-label {
+  color: #4f5a70;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.wp-answer-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.wp-answer-input {
+  width: 112px;
+  min-height: 56px;
+  border: 2px solid #cfc4f7;
+  border-radius: 14px;
+  background: #fdfcff;
+  padding: 8px 10px;
+  color: var(--planet-ink);
+  font-family: var(--font-title);
+  font-size: 26px;
+  font-weight: 900;
+  text-align: center;
+  letter-spacing: 0.04em;
+}
+
+.wp-answer-input:focus {
+  border-color: var(--planet-primary);
+  outline: none;
+  box-shadow: 0 0 0 4px rgba(98, 80, 207, 0.14);
+}
+
+.wp-answer-unit {
+  border-radius: 10px;
+  background: var(--planet-soft);
+  padding: 5px 11px;
+  color: var(--planet-primary-dark);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.wp-answer-tip {
+  margin: 0;
+  color: var(--planet-muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.wp-check-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.wp-check-feedback {
+  margin: 0;
+  border-radius: 11px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.6;
+}
+
+.wp-fallback {
+  min-width: 0;
+}
+
+.wp-fallback-story {
+  margin: 0;
+  color: var(--planet-ink);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.wp-fallback-input {
+  width: 96px;
+  min-height: 48px;
+  border: 2px solid #cfc4f7;
+  border-radius: 12px;
+  background: #fdfcff;
+  padding: 8px;
+  color: var(--planet-ink);
+  font-family: var(--font-title);
+  font-size: 22px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.wp-fallback-input:focus {
+  border-color: var(--planet-primary);
+  outline: none;
+  box-shadow: 0 0 0 4px rgba(98, 80, 207, 0.14);
+}
+
+/* 键盘操作可见焦点。 */
+.wp-part:focus-visible,
+.wp-button:focus-visible,
+.wp-answer-input:focus-visible,
+.wp-fallback-input:focus-visible {
+  outline: 3px solid #8c7ee2;
+  outline-offset: 2px;
+}
+
+@media (max-width: 520px) {
+  .wp-flow {
+    border-radius: 16px;
+    padding: 12px;
+  }
+  .wp-story {
+    padding: 12px;
+    font-size: 16px;
+    line-height: 2;
+  }
+  .wp-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+  .wp-button {
+    width: 100%;
+  }
+  .wp-answer {
+    padding: 12px;
+  }
+  .wp-answer-input {
+    width: 96px;
+    min-height: 50px;
+    font-size: 24px;
+  }
+  .wp-check-row {
+    align-items: stretch;
+  }
+  .wp-check-row .wp-button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 360px) {
+  .wp-story {
+    font-size: 15px;
+    padding: 10px;
+  }
+  .wp-instruction {
+    font-size: 12px;
+  }
+  .wp-answer-row {
+    gap: 7px;
+  }
+}
