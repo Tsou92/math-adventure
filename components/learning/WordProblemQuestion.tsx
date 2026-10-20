@@ -3,10 +3,12 @@
  * 乘除应用题答题组件。
  *
  * - v2（lib/word-problems.ts 的 WordProblemV2Prompt）：顺序分步流程
- *   1) 在题干里点选已知条件；
+ *   1) 在题干里点选孩子认为的已知条件；
  *   2) 有隐藏条件时，进入单独的隐藏条件步骤自由输入并验证（普通题没有这一步）；
- *   3) 点选题目要求的问题；
+ *   3) 点选孩子认为的所求问题；
  *   4) 填写最终的数字答案。
+ *   题干点选只表达孩子的选择，不即时判断对错、不统计数量、不给提示；只有点
+ *   「下一步」时才统一验证，验证失败只给一句中性提示，不指出具体片段或线索。
  *   普通题共 3 步，隐藏条件题共 4 步。分步状态写入 sessionStorage 草稿，
  *   刷新页面或单题/整页切换后可以恢复；最终答案始终由父级 answer 控制，
  *   流程草稿里不保存答案。
@@ -27,7 +29,6 @@ import {
   checkQuestionSelection,
   readWordProblemStepDraft,
   writeWordProblemStepDraft,
-  type ConditionCheckCode,
   type WordProblemPart,
   type WordProblemStage,
   type WordProblemV2Prompt,
@@ -43,12 +44,12 @@ type WordProblemQuestionProps = {
   checkAnswer?: (question: RoundQuestion, value: string) => boolean;
 };
 
-type FeedbackTone = 'error' | 'success' | 'progress';
+/** 验证失败时唯一的中性反馈：不点名片段、数量、数值或单位。 */
+const RETRY_FEEDBACK = '再想一想。';
 
-type Feedback = {
-  tone: FeedbackTone;
-  text: string;
-};
+/** 隐藏条件步骤的提问与输入提示保持中性，不使用题库里可能带方向的旧文案。 */
+const HIDDEN_LABEL = '把你想到的写下来。';
+const HIDDEN_PLACEHOLDER = '写一写';
 
 /** v2 流程的整块状态；从 sessionStorage 草稿初始化，避免散落的互相依赖的 effect。 */
 type FlowState = {
@@ -58,10 +59,10 @@ type FlowState = {
   selectedConditions: string[];
   selectedQuestions: string[];
   hiddenInput: string;
-  clueOpen: boolean;
+  /** 只有点「下一步」验证失败时出现的统一中性提示。 */
+  feedback: string | null;
   /** 最近一次检查所用的答案，配合当前父级 answer 决定检查反馈是否仍然有效。 */
   checked: { answer: string; correct: boolean } | null;
-  feedback: Feedback | null;
 };
 
 const STAGE_TITLES: Record<WordProblemStage, string> = {
@@ -71,22 +72,12 @@ const STAGE_TITLES: Record<WordProblemStage, string> = {
   answer: '算答案',
 };
 
+/** 每个阶段只保留一句简短的自主读题提问，不提示下一阶段藏了什么。 */
 const STAGE_INSTRUCTIONS: Record<WordProblemStage, string> = {
-  conditions: '点选题目里的已知条件（有几个选几个）。',
-  hidden:
-    '题目里藏着一个已知条件。想一想它表示多少，把它的意思写进下面的输入框。',
-  question: '点选题目问的是什么。',
-  answer: '把算出来的结果填在下面的答案框里。',
-};
-
-const CONDITION_ERRORS: Record<ConditionCheckCode, string> = {
-  questionAsCondition:
-    '你把问题当条件了，再点一下那个问题片段取消它，然后找真正的已知条件。',
-  missing: '还有已知条件没选上，再读一遍题目，把有用的信息都点一点。',
-  extra: '选到了不是解题需要的条件，再检查一下哪些信息真的有用。',
-  hiddenMissing: '题目里藏着一个条件，先把它写进下面的输入框再继续。',
-  hiddenInvalid:
-    '隐藏条件还写得不对，再想一想它表示多少，用数字和「天」写清楚。',
+  conditions: '题目告诉了你什么？',
+  hidden: '你还想到了什么条件？',
+  question: '题目要解决什么问题？',
+  answer: '写出你的答案。',
 };
 
 /** v2 的步骤顺序：隐藏条件题在条件与问题之间多一步。 */
@@ -105,46 +96,13 @@ function stageLabel(
   return `第 ${index + 1} 步 / 共 ${steps.length} 步：${STAGE_TITLES[stage]}`;
 }
 
-function nextButtonLabel(
-  stage: WordProblemStage,
-  hasHiddenCondition: boolean,
-): string {
-  if (stage === 'conditions')
-    return hasHiddenCondition ? '下一步：找隐藏条件' : '下一步：找问题';
-  if (stage === 'hidden') return '下一步：找问题';
-  return '下一步：填答案';
-}
-
-/** 可被选为条件/问题的片段 id（text 与 clue 片段不参与选择）。 */
+/** 题干里所有可点片段共享同一套选择行为：条件、线索和问题不区分类别。 */
 function selectablePartIds(prompt: WordProblemV2Prompt): Set<string> {
   const ids = new Set<string>();
   for (const part of prompt.parts) {
-    if (part.type === 'condition' || part.type === 'question') ids.add(part.id);
+    if (part.type !== 'text') ids.add(part.id);
   }
   return ids;
-}
-
-function clueText(prompt: WordProblemV2Prompt): string {
-  return prompt.parts
-    .filter(
-      (part): part is Extract<WordProblemPart, { type: 'clue' }> =>
-        part.type === 'clue',
-    )
-    .map((part) => part.text)
-    .join('、');
-}
-
-function clueHint(
-  prompt: WordProblemV2Prompt,
-  stage: WordProblemStage,
-): string {
-  const text = clueText(prompt);
-  if (!text) return '再读一遍题目，看看有没有藏起来的已知条件。';
-  if (!prompt.hiddenCondition)
-    return `提示：「${text}」里可能藏着重要的信息，再仔细读一读。`;
-  if (stage === 'hidden')
-    return `提示：「${text}」里藏着一个已知条件。想一想它表示多少，把想到的写进下面的「隐藏条件」里。`;
-  return `提示：「${text}」里藏着一个已知条件。先把已知条件都选对，下一步再把它写出来。`;
 }
 
 /** 隐藏条件题在条件步骤通过、且输入意思正确时，才算找到了隐藏条件。 */
@@ -207,7 +165,6 @@ function createFlowState(
     selectedConditions,
     selectedQuestions,
     hiddenInput,
-    clueOpen: Boolean(draft?.clueOpen),
     checked: null,
     feedback: null,
   };
@@ -275,7 +232,6 @@ function WordProblemV2Flow({
     selectedConditions,
     selectedQuestions,
     hiddenInput,
-    clueOpen,
     feedback,
     checked,
   } = state;
@@ -297,7 +253,6 @@ function WordProblemV2Flow({
       selectedConditions,
       selectedQuestions,
       hiddenInput,
-      clueOpen,
     });
   }, [
     question.id,
@@ -308,7 +263,6 @@ function WordProblemV2Flow({
     selectedConditions,
     selectedQuestions,
     hiddenInput,
-    clueOpen,
   ]);
 
   /** 上游一旦修改，就让下游验证与已填最终答案失效；仅返回上一步不调用。 */
@@ -324,17 +278,7 @@ function WordProblemV2Flow({
       const next = prev.selectedConditions.includes(id)
         ? prev.selectedConditions.filter((item) => item !== id)
         : [...prev.selectedConditions, id];
-      const feedbackUpdate: Feedback | null = next.includes(prompt.questionId)
-        ? {
-            tone: 'error',
-            text: '这是题目要问的问题，不能把问题当条件；再点它一下可以取消。',
-          }
-        : next.length > 0
-          ? {
-              tone: 'progress',
-              text: `已经点了 ${next.length} 个片段，找齐了就点「${nextButtonLabel('conditions', hasHiddenCondition)}」。`,
-            }
-          : null;
+      // 点选和取消都只更新选择本身：不判断对错、不统计数量、不给下一步提示。
       return {
         ...prev,
         selectedConditions: next,
@@ -342,7 +286,7 @@ function WordProblemV2Flow({
         questionVerified: false,
         selectedQuestions: [],
         checked: null,
-        feedback: feedbackUpdate,
+        feedback: null,
       };
     });
   };
@@ -365,95 +309,48 @@ function WordProblemV2Flow({
     clearSavedFinalAnswer();
     setState((prev) => ({
       ...prev,
-      // 问题只选一个：再点一下取消，点另一个就换成它。
+      // 问题只选一个：再点一下取消，点另一个就换成它；选择本身不判对错。
       selectedQuestions: prev.selectedQuestions.includes(id) ? [] : [id],
       questionVerified: false,
       checked: null,
-      feedback:
-        id === prompt.questionId
-          ? {
-              tone: 'progress',
-              text: '问题选好了，点「下一步：填答案」继续。',
-            }
-          : {
-              tone: 'error',
-              text: '这还不是题目问的问题，再找找题目最后问的那一句。',
-            },
+      feedback: null,
     }));
-  };
-
-  const toggleClue = () => {
-    if (locked) return;
-    setState((prev) => ({ ...prev, clueOpen: !prev.clueOpen }));
   };
 
   const goNext = () => {
     if (locked) return;
     if (stage === 'conditions') {
       // 第 1 步只校验点选；隐藏条件留到下一步单独询问。
-      const code = checkConditionSelection(prompt, selectedConditions);
-      if (code) {
-        setState((prev) => ({
-          ...prev,
-          feedback: { tone: 'error', text: CONDITION_ERRORS[code] },
-        }));
+      if (checkConditionSelection(prompt, selectedConditions)) {
+        setState((prev) => ({ ...prev, feedback: RETRY_FEEDBACK }));
         return;
       }
       setState((prev) => ({
         ...prev,
         stage: hasHiddenCondition ? 'hidden' : 'question',
         conditionsVerified: true,
-        feedback: {
-          tone: 'success',
-          text: hasHiddenCondition
-            ? '已知条件都找对了！题目里还藏着一个条件，下一步把它写出来。'
-            : '已知条件都找对了！接下来点选题目问的是什么。',
-        },
+        feedback: null,
       }));
       return;
     }
     if (stage === 'hidden') {
-      const code = checkHiddenConditionStep(prompt, hiddenInput);
-      if (code) {
-        setState((prev) => ({
-          ...prev,
-          feedback: { tone: 'error', text: CONDITION_ERRORS[code] },
-        }));
+      if (checkHiddenConditionStep(prompt, hiddenInput)) {
+        setState((prev) => ({ ...prev, feedback: RETRY_FEEDBACK }));
         return;
       }
-      setState((prev) => ({
-        ...prev,
-        stage: 'question',
-        feedback: {
-          tone: 'success',
-          text: '隐藏条件也找到了！接下来点选题目问的是什么。',
-        },
-      }));
+      setState((prev) => ({ ...prev, stage: 'question', feedback: null }));
       return;
     }
     if (stage === 'question') {
-      const code = checkQuestionSelection(prompt, selectedQuestions);
-      if (code !== null) {
-        setState((prev) => ({
-          ...prev,
-          feedback: {
-            tone: 'error',
-            text:
-              code === 'none'
-                ? '还没有选问题，点一点题目里问的那句话。'
-                : '这还不是题目问的问题，再找找题目最后问的那一句。',
-          },
-        }));
+      if (checkQuestionSelection(prompt, selectedQuestions) !== null) {
+        setState((prev) => ({ ...prev, feedback: RETRY_FEEDBACK }));
         return;
       }
       setState((prev) => ({
         ...prev,
         stage: 'answer',
         questionVerified: true,
-        feedback: {
-          tone: 'success',
-          text: '问题也找对了！现在把算出来的答案填进去吧。',
-        },
+        feedback: null,
       }));
     }
   };
@@ -515,36 +412,8 @@ function WordProblemV2Flow({
           {part.text}
         </span>
       );
-    if (part.type === 'clue') {
-      if (stage === 'answer')
-        return (
-          <span
-            key={part.id}
-            data-testid={`wp-part-${part.id}`}
-            data-kind={part.type}
-            className="wp-part wp-part-static"
-          >
-            {part.text}
-          </span>
-        );
-      return (
-        <button
-          key={part.id}
-          type="button"
-          data-testid={`wp-part-${part.id}`}
-          data-kind={part.type}
-          aria-expanded={clueOpen}
-          aria-pressed={clueOpen}
-          aria-label={`提示：${part.text}`}
-          className="wp-part wp-clue-toggle"
-          onClick={toggleClue}
-        >
-          {part.text}
-        </button>
-      );
-    }
-    // 条件阶段按条件选择；问题阶段仍保留已确认条件的选中态，同时反映问题候选；
-    // 隐藏条件阶段题干固定显示已确认的条件，孩子专心写隐藏条件。
+    // 条件、线索和问题片段在题干里完全同构：点选只表达孩子的选择，
+    // 不区分片段类别、不即时判对错，也没有橙色/黄色等线索提示。
     const pressed =
       stage === 'conditions'
         ? selectedConditions.includes(part.id)
@@ -552,13 +421,12 @@ function WordProblemV2Flow({
           ? selectedQuestions.includes(part.id) ||
             selectedConditions.includes(part.id)
           : false;
+    // 后续阶段题干只读展示：显示孩子已经选过的片段，不再可点。
     const confirmed =
       stage === 'answer'
         ? prompt.conditionIds.includes(part.id) ||
           part.id === prompt.questionId
-        : stage === 'question' || stage === 'hidden'
-          ? selectedConditions.includes(part.id)
-          : false;
+        : selectedConditions.includes(part.id);
     if (stage === 'answer' || stage === 'hidden')
       return (
         <span
@@ -577,7 +445,7 @@ function WordProblemV2Flow({
         data-testid={`wp-part-${part.id}`}
         data-kind={part.type}
         aria-pressed={pressed}
-        className={`wp-part${pressed ? ' wp-part-pressed' : ''}${confirmed ? ' wp-part-confirmed' : ''}`}
+        className={`wp-part${pressed ? ' wp-part-pressed' : ''}`}
         onClick={() =>
           stage === 'conditions'
             ? toggleCondition(part.id)
@@ -610,13 +478,13 @@ function WordProblemV2Flow({
         </div>
         {stage === 'hidden' && prompt.hiddenCondition && (
           <label className="wp-hidden">
-            <span>{prompt.hiddenCondition.label}</span>
+            <span>{HIDDEN_LABEL}</span>
             <input
               type="text"
               data-testid="wp-hidden-input"
-              aria-label="隐藏条件"
+              aria-label="你想到的条件"
               autoComplete="off"
-              placeholder={prompt.hiddenCondition.placeholder}
+              placeholder={HIDDEN_PLACEHOLDER}
               value={hiddenInput}
               onChange={(event) => changeHiddenInput(event.target.value)}
               onKeyDown={hiddenInputKeyDown}
@@ -633,19 +501,10 @@ function WordProblemV2Flow({
               已找到的隐藏条件：<strong>{hiddenInput.trim()}</strong>
             </p>
           )}
-        {stage !== 'answer' && clueOpen && (
-          <p className="wp-clue-hint" data-testid="wp-clue-hint">
-            {clueHint(prompt, stage)}
-          </p>
-        )}
         {feedback && (
-          <p
-            data-testid="wp-feedback"
-            role={feedback.tone === 'error' ? 'alert' : 'status'}
-            className={`wp-feedback wp-feedback-${feedback.tone}`}
-          >
-            {feedback.text}
-          </p>
+          <output data-testid="wp-feedback" className="wp-feedback">
+            {feedback}
+          </output>
         )}
         {stage === 'answer' && (
           <div className="wp-answer">
@@ -712,7 +571,7 @@ function WordProblemV2Flow({
               data-testid="wp-next"
               onClick={goNext}
             >
-              {nextButtonLabel(stage, hasHiddenCondition)}
+              下一步
             </button>
           )}
         </div>

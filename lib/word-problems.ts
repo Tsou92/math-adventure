@@ -3,8 +3,9 @@
  *
  * v2 promptData 把题干拆成有意义的文本片段：
  * - 已知条件（condition）：孩子直接在题干里点选，数量必须恰好选对；
- * - 隐藏条件线索（clue）：如「一个星期」，点一点提示这里藏着一个条件；
- * - 所求问题（question）：条件阶段选到问题本身会提示「把问题当条件」。
+ * - 隐藏条件线索（clue）：如「一个星期」，只是题干的一部分，不提供提示开关；
+ * - 所求问题（question）：与条件片段一样可点选，点选本身不即时判断对错。
+ * 所有片段只在点「下一步」时统一验证，验证失败也只给中性提示。
  * 有隐藏条件时（目前是「一个星期有 7 天」），孩子要先点选完已知条件，再单独
  * 写隐藏条件并做确定性语义校验，然后才点选所求问题，最后填写数字答案；
  * 普通题只有「条件 → 问题 → 答案」三步。
@@ -30,7 +31,10 @@ export type WordProblemHiddenKind = 'weekDays';
 
 export type WordProblemHiddenCondition = {
   kind: WordProblemHiddenKind;
-  /** 输入框上方的儿童向说明，不包含正确答案。 */
+  /**
+   * 隐藏条件步骤的中性说明。组件渲染时统一使用自己的中性提问，
+   * 这里只用于生成数据与旧数据兼容，不承载具体提示。
+   */
   label: string;
   placeholder: string;
 };
@@ -125,10 +129,14 @@ function generate(
   return { kind, story: prompt.story, answer, prompt };
 }
 
+/**
+ * 隐藏条件输入框的说明保持中性提问：不提示「一个星期有几天」，也不提示用
+ * 数字和「天」作答。组件渲染时使用同一套中性文案，旧数据里的具体提示不再展示。
+ */
 const WEEK_HIDDEN: WordProblemHiddenCondition = {
   kind: 'weekDays',
-  label: '题目里没有直接说一个星期有几天，请把你想到的隐藏条件写下来：',
-  placeholder: '把你的发现写下来',
+  label: '把你想到的写下来。',
+  placeholder: '写一写',
 };
 
 /** 乘法求总数：每份数(箱/盒/盘…) × 份数，答案为总数。x=每份数，y=份数，z=干扰数量。 */
@@ -882,7 +890,6 @@ export type WordProblemStepDraft = {
   selectedConditions: string[];
   selectedQuestions: string[];
   hiddenInput: string;
-  clueOpen: boolean;
 };
 
 export type WordProblemStepDraftData = Omit<
@@ -948,7 +955,6 @@ export function readWordProblemStepDraft(
       selectedQuestions: strings(parsed.selectedQuestions),
       hiddenInput:
         typeof parsed.hiddenInput === 'string' ? parsed.hiddenInput : '',
-      clueOpen: Boolean(parsed.clueOpen),
     };
   } catch {
     return null;

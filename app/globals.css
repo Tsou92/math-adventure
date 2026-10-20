@@ -3119,7 +3119,7 @@ output.success-banner {
   overflow-wrap: anywhere;
 }
 
-/* 所有可选片段在未点选时样式完全一致，不提前暴露对错。 */
+/* 所有可点片段共用同一种未选择/已选择样式：不区分条件、线索与问题，也不提前暴露对错。 */
 .wp-part {
   border: 0;
   border-bottom: 2px dashed #b7a9ee;
@@ -3154,12 +3154,6 @@ output.success-banner {
   box-shadow: inset 0 0 0 2px #c9bef5;
 }
 
-.wp-clue-toggle[aria-expanded='true'] {
-  border-bottom-color: #d89b1f;
-  background: #fff3d6;
-  color: #7a5610;
-}
-
 .wp-part-static {
   border-bottom: 0;
   padding: 0 1px;
@@ -3182,18 +3176,6 @@ output.success-banner {
 .wp-part-question {
   border-bottom-color: var(--planet-primary);
   background: #e7e1ff;
-}
-
-.wp-clue-hint {
-  margin: 0;
-  border-left: 4px solid #f0c14b;
-  border-radius: 10px;
-  background: #fff9e8;
-  padding: 9px 12px;
-  color: #7a5a12;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.7;
 }
 
 .wp-hidden {
@@ -3238,33 +3220,30 @@ output.success-banner {
   color: var(--planet-primary-dark);
 }
 
+/* 点选验证反馈统一为中性样式：不用绿色/红色/黄色表示对错或线索。 */
 .wp-feedback {
   margin: 0;
+  border: 1px solid #e4e0f2;
   border-radius: 11px;
+  background: #f8f7fc;
   padding: 9px 12px;
+  color: #5c5870;
   font-size: 13px;
   font-weight: 800;
   line-height: 1.6;
 }
 
-.wp-feedback-error,
+/* 开发预览页的最终答案检查仍用成功/错误反馈，正式练习由服务端判分。 */
 .wp-check-feedback-error {
   border: 1px solid #ffd3c6;
   background: #fff5f1;
   color: #b8503a;
 }
 
-.wp-feedback-success,
 .wp-check-feedback-success {
   border: 1px solid #c9ecdc;
   background: #f2fcf7;
   color: #14705a;
-}
-
-.wp-feedback-progress {
-  border: 1px solid #ddd6fb;
-  background: #f7f5ff;
-  color: #5b4bb8;
 }
 
 .wp-actions {

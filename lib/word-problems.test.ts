@@ -127,7 +127,6 @@ const draftData: WordProblemStepDraftData = {
   selectedConditions: ['c1', 'c2'],
   selectedQuestions: [],
   hiddenInput: '',
-  clueOpen: false,
 };
 
 describe('makeWordProblemSpecs', () => {
@@ -289,6 +288,13 @@ describe('新版应用题 promptData', () => {
     expect(week.answer).toBe(14);
   });
 
+  it('隐藏条件的儿童向说明保持中性，不提示答案方向', () => {
+    const hidden = wordProblemExamples[2].prompt.hiddenCondition;
+    expect(hidden?.kind).toBe('weekDays');
+    expect(hidden?.label).not.toMatch(/[0-9０-９]|星期|周|天|几/);
+    expect(hidden?.placeholder).not.toMatch(/[0-9０-９]|星期|周|天|几/);
+  });
+
   it('找已知条件步骤只校验点选，隐藏条件在独立的隐藏条件步骤校验', () => {
     const [snacks, apples, week] = wordProblemExamples;
     expect(checkConditionSelection(snacks.prompt, ['c1', 'c2'])).toBeNull();
@@ -383,6 +389,28 @@ describe('分步草稿 sessionStorage', () => {
     expect(restored?.stage).toBe('hidden');
     expect(restored?.conditionsVerified).toBe(true);
     expect(restored?.hiddenInput).toBe('7天');
+  });
+
+  it('旧草稿里的 clueOpen 提示状态被忽略，不会恢复任何提示开关', () => {
+    const storage = new MemoryStorage();
+    storage.setItem(
+      wordProblemDraftKey('q-old'),
+      JSON.stringify({
+        version: 1,
+        fingerprint: wordProblemFingerprint('题干丁'),
+        stage: 'conditions',
+        conditionsVerified: false,
+        questionVerified: false,
+        selectedConditions: ['c1'],
+        selectedQuestions: [],
+        hiddenInput: '',
+        clueOpen: true,
+      }),
+    );
+    const restored = readWordProblemStepDraft('q-old', '题干丁', storage);
+    expect(restored).not.toBeNull();
+    expect(restored && 'clueOpen' in restored).toBe(false);
+    expect(restored?.selectedConditions).toEqual(['c1']);
   });
 
   it('坏数据或存储不可用时不影响作答', () => {

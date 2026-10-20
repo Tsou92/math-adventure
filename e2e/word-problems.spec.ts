@@ -241,10 +241,7 @@ test.describe('乘除应用题 · 开发预览页', () => {
     await week.getByTestId('wp-hidden-input').fill('5天');
     await week.getByTestId('wp-next').click();
     await expect(week).toHaveAttribute('data-stage', 'hidden');
-    await expect(week.getByTestId('wp-feedback')).toHaveAttribute(
-      'role',
-      'alert',
-    );
+    await expect(week.getByTestId('wp-feedback')).toHaveText('再想一想。');
     // 宽容写法通过后进入问题阶段
     await week.getByTestId('wp-hidden-input').fill('一星期有7天');
     await week.getByTestId('wp-next').click();
@@ -273,10 +270,7 @@ test.describe('乘除应用题 · 开发预览页', () => {
     // 漏选
     await snacks.getByTestId('wp-next').click();
     await expect(snacks).toHaveAttribute('data-stage', 'conditions');
-    await expect(snacks.getByTestId('wp-feedback')).toHaveAttribute(
-      'role',
-      'alert',
-    );
+    await expect(snacks.getByTestId('wp-feedback')).toHaveText('再想一想。');
     // 取消选择
     await snacks.getByTestId('wp-part-c1').click();
     await expect(snacks.getByTestId('wp-part-c1')).toHaveAttribute(
@@ -294,7 +288,7 @@ test.describe('乘除应用题 · 开发预览页', () => {
     await snacks.getByTestId('wp-part-q').click();
     await snacks.getByTestId('wp-next').click();
     await expect(snacks).toHaveAttribute('data-stage', 'conditions');
-    await expect(snacks.getByTestId('wp-feedback')).toContainText('问题');
+    await expect(snacks.getByTestId('wp-feedback')).toHaveText('再想一想。');
     await snacks.getByTestId('wp-part-q').click();
     await snacks.getByTestId('wp-next').click();
     await expect(snacks).toHaveAttribute('data-stage', 'question');
@@ -302,7 +296,7 @@ test.describe('乘除应用题 · 开发预览页', () => {
     await snacks.getByTestId('wp-part-c1').click();
     await snacks.getByTestId('wp-next').click();
     await expect(snacks).toHaveAttribute('data-stage', 'question');
-    await expect(snacks.getByTestId('wp-feedback')).toContainText('问题');
+    await expect(snacks.getByTestId('wp-feedback')).toHaveText('再想一想。');
     await snacks.getByTestId('wp-part-c1').click();
     await snacks.getByTestId('wp-part-q').click();
     await snacks.getByTestId('wp-next').click();
@@ -318,9 +312,7 @@ test.describe('乘除应用题 · 开发预览页', () => {
       await conditions.nth(index).click();
     await flow.getByTestId('wp-next').click();
     await expect(flow).toHaveAttribute('data-stage', 'conditions');
-    await expect(flow.getByTestId('wp-feedback')).toContainText(
-      '不是解题需要的条件',
-    );
+    await expect(flow.getByTestId('wp-feedback')).toHaveText('再想一想。');
     await conditions.nth(count - 1).click();
     await flow.getByTestId('wp-next').click();
     await expect(flow).toHaveAttribute('data-stage', 'question');
@@ -337,10 +329,7 @@ test.describe('乘除应用题 · 开发预览页', () => {
     await week.getByTestId('wp-hidden-input').fill('不是7天');
     await week.getByTestId('wp-next').click();
     await expect(week).toHaveAttribute('data-stage', 'hidden');
-    await expect(week.getByTestId('wp-feedback')).toHaveAttribute(
-      'role',
-      'alert',
-    );
+    await expect(week.getByTestId('wp-feedback')).toHaveText('再想一想。');
     // 只输入、不推进时刷新，恢复到隐藏条件步骤并保留输入
     await week.getByTestId('wp-hidden-input').fill('７天');
     await page.reload();
