@@ -4,12 +4,14 @@ export type LearningView =
   | 'home'
   | 'practice'
   | 'review'
+  | 'mistakes'
   | 'history'
   | 'result';
 const allowed: LearningView[] = [
   'home',
   'practice',
   'review',
+  'mistakes',
   'history',
   'result',
 ];

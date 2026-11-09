@@ -4,6 +4,7 @@ import {
   ArrowRight,
   BookOpen,
   ChevronDown,
+  NotebookPen,
   History,
   Home,
   RefreshCw,
@@ -33,6 +34,7 @@ import { AppHeader, ErrorNotice, LoadingPanel } from './Shared';
 import { ModePicker, QuestionPicker } from './QuestionPicker';
 import { PracticeRound, type PracticeRoundHandle } from './PracticeRound';
 import { WrongBook } from './WrongBook';
+import { MistakeBook } from './MistakeBook';
 import { PracticeHistory } from './History';
 import { Progress } from './Progress';
 import { Results } from './Results';
@@ -302,6 +304,8 @@ export default function ChildDashboard({
           onReviewed={reviewed}
         />
       );
+    if (view === 'mistakes')
+      return <MistakeBook onBack={() => navigate('home')} />;
     if (view === 'result' && result)
       return (
         <Results
@@ -536,6 +540,13 @@ export default function ChildDashboard({
           >
             <BookOpen />
             再挑战
+          </button>
+          <button
+            aria-current={view === 'mistakes' ? 'page' : undefined}
+            onClick={() => navigate('mistakes')}
+          >
+            <NotebookPen />
+            错题集
           </button>
           <button
             aria-current={view === 'history' ? 'page' : undefined}

@@ -1727,7 +1727,7 @@ h3 {
   bottom: 16px;
   left: 50%;
   transform: translateX(-50%);
-  width: 330px;
+  width: 420px;
   border: 1px solid var(--planet-line);
   border-radius: 22px;
   box-shadow: 0 8px 30px #27344912;
@@ -3475,4 +3475,17 @@ output.success-banner {
   .wp-answer-row {
     gap: 7px;
   }
+}
+
+.mistake-type-card {
+  text-align: left;
+  display: grid;
+  gap: 8px;
+  cursor: pointer;
+}
+.mistake-type-card:hover {
+  border-color: var(--planet-primary);
+}
+.mistake-type-card strong {
+  font-size: 17px;
 }
