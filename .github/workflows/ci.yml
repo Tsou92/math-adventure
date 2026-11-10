@@ -7,7 +7,9 @@ on:
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
+    # ubuntu-latest is Ubuntu 26.04. Playwright 1.58.2 has no Chromium build
+    # for ubuntu26.04-x64, so `playwright install --with-deps` fails before e2e.
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:17
